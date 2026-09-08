@@ -1,0 +1,95 @@
+# ==============================================================================
+# Python & Bytecode
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==============================================================================
+# Virtual Environments
+# ==============================================================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ==============================================================================
+# Sensitive Configuration & API Keys
+# ==============================================================================
+.env
+.env.*
+config.json
+
+# ==============================================================================
+# Runtime Cached Data & Temporary Files
+# ==============================================================================
+douyin_video_info.json
+_sub_tmp_*
+*.log
+tmp/
+temp/
+.cache/
+
+# ==============================================================================
+# Downloaded Media & Processing Outputs
+# ==============================================================================
+downloads/*
+!downloads/.gitkeep
+
+# Temporary media files in root
+/*.mp4
+/*.mp3
+/*.m4a
+/*.wav
+/*.aac
+/*.flac
+/*.webm
+/*.srt
+/*.vtt
+
+# ==============================================================================
+# Operating System & IDE Artifacts
+# ==============================================================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# VS Code / JetBrains / Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~

@@ -1,0 +1,39 @@
+================================================================================
+                    HƯỚNG DẪN SỬ DỤNG BỘ CÔNG CỤ NAMBEO PRO
+        (Tải Video Douyin/Facebook - Tách Phụ Đề - Dịch AI - Lồng Tiếng AI)
+================================================================================
+
+1. YÊU CẦU HỆ THỐNG:
+- Hệ điều hành: Windows 10 / 11 (64-bit).
+- Đã cài đặt Python 3.10, 3.11, 3.12 hoặc 3.13.
+  (Nếu chưa có Python: Tải tại https://www.python.org/downloads/ và NHỚ tích vào
+   ô "Add python.exe to PATH" khi cài đặt).
+
+2. CÁCH CÀI ĐẶT LẦN ĐẦU (1-CLICK SETUP):
+- Bước 1: Nhấp đúp chuột vào file: cai_dat.bat
+- Bước 2: Chờ phần mềm tự động tạo môi trường ảo (venv), tải toàn bộ thư viện
+  và cài đặt trình duyệt Chromium hỗ trợ bóc tách link.
+- Khi màn hình hiện thông báo "CÀI ĐẶT HOÀN TẤT 100%", nhấn phím bất kỳ để đóng.
+
+3. CÁCH KHỞI ĐỘNG VÀ SỬ DỤNG:
+- Mỗi lần muốn dùng, bạn chỉ cần nhấp đúp vào file: run.bat
+- Cửa sổ dòng lệnh sẽ tự động khởi chạy và trình duyệt web sẽ tự động mở lên địa chỉ:
+  http://127.0.0.1:8000
+- Bạn có thể dán link video Douyin hoặc Facebook Reels/Watch để:
+  + Tải video không logo chất lượng cao.
+  + Tự động nhận diện giọng nói và xuất phụ đề tiếng Trung / tiếng Anh (Whisper).
+  + Dịch thuật sang tiếng Việt mượt mà bằng AI (Google Gemini hoặc OpenAI).
+  + Lồng tiếng tiếng Việt tự nhiên chuẩn giọng Hoài My / Nam Minh (Edge TTS miễn phí)
+    hoặc giọng OpenAI.
+  + Ghép âm thanh lồng tiếng vào video gốc với hiệu ứng tự động giảm âm lượng nền (Audio Ducking).
+
+4. QUẢN LÝ DỮ LIỆU & CẤU HÌNH:
+- File cấu hình API: config.json (đã cấu hình sẵn API Key Gemini & OpenAI).
+  Bạn có thể thay đổi API Key trực tiếp trên giao diện Web UI (mục Cài Đặt)
+  hoặc sửa trực tiếp file config.json.
+- Thư mục chứa video đã tải và kết quả xử lý: thư mục downloads/
+
+5. LƯU Ý KHI SỬ DỤNG:
+- Khi muốn tắt công cụ: Nhấn tổ hợp phím Ctrl + C ở cửa sổ dòng lệnh run.bat.
+- Nếu gặp sự cố cổng 8000 bị chiếm: start_app.py sẽ tự động giải phóng tiến trình cũ.
+================================================================================
