@@ -147,3 +147,15 @@ class YouTubeExtractor:
         expected_path = f"{outtmpl_no_ext}.mp4"
         if os.path.exists(expected_path) and expected_path != output_mp4_path:
             os.replace(expected_path, output_mp4_path)
+
+        # Cleanup yt-dlp intermediate files
+        target_dir = os.path.dirname(output_mp4_path)
+        base_name = os.path.basename(outtmpl_no_ext)
+        if os.path.exists(target_dir):
+            import re
+            for f in os.listdir(target_dir):
+                if f.startswith(base_name) and re.search(r'\.f\d+\.(mp4|m4a|webm)$', f):
+                    try:
+                        os.remove(os.path.join(target_dir, f))
+                    except Exception:
+                        pass

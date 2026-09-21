@@ -44,6 +44,7 @@ config.json
 # Runtime Cached Data & Temporary Files
 # ==============================================================================
 douyin_video_info.json
+counters.json
 _sub_tmp_*
 *.log
 tmp/

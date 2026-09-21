@@ -35,6 +35,8 @@ from core.transcriber import DouyinTranscriber
 from core.translator import DouyinTranslator
 from core.dubber import DouyinDubber
 from core.subtitler import DouyinSubtitler
+from core.editor import VideoEditor
+from core.vocal_remover import VocalRemover
 
 app = FastAPI(title="Douyin Video Downloader MVP")
 
@@ -82,7 +84,40 @@ transcriber = DouyinTranscriber()
 translator = DouyinTranslator()
 dubber = DouyinDubber()
 subtitler = DouyinSubtitler()
+editor = VideoEditor()
+vocal_remover = VocalRemover()
+edit_tasks: Dict[str, Dict] = {}
+batch_tasks: Dict[str, Dict] = {}
 parsed_cache: Dict[str, Dict] = {}
+
+class EditVideoRequest(BaseModel):
+    filepath: str
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    aspect_ratio: str = "original"
+    blur_background: bool = True
+    blur_bottom_sub: bool = False
+    flip_horizontal: bool = False
+    zoom_percent: float = 1.0
+    speed: float = 1.0
+    burn_subtitles: bool = True
+    sub_type: str = "vi"
+    use_dubbed_audio: bool = True
+    clean_bgm: bool = False
+    font_size: int = 22
+    font_color: str = "white"
+
+class BatchRunRequest(BaseModel):
+    filepaths: List[str]
+    voice: str = "vi-VN-HoaiMyNeural"
+    aspect_ratio: str = "9:16"
+    blur_background: bool = True
+    blur_bottom_sub: bool = True
+    flip_horizontal: bool = True
+    zoom_percent: float = 1.0
+    speed: float = 1.05
+    clean_bgm: bool = True
+    burn_subtitles: bool = True
 
 class ParseRequest(BaseModel):
     urls: List[str]
@@ -193,6 +228,12 @@ class SubtitleExportRequest(BaseModel):
     font_color: Optional[str] = "white"
     position: Optional[str] = "overlay_original"
     mask_original: Optional[bool] = True
+
+class CropTrimRequest(BaseModel):
+    filepath: str                         # relative path trong downloads/
+    crop: Optional[Dict] = None           # {x, y, w, h} pixel tuyệt đối
+    trim: Optional[Dict] = None           # {start, end} giây
+    lossless_trim: Optional[bool] = True  # True = -c copy, False = re-encode
 
 @app.get("/api/config")
 async def get_config():
@@ -466,144 +507,154 @@ async def get_history():
     if not os.path.exists(current_download_dir):
         return {"videos": []}
 
-    targets = [("", "Chung")]  # (subfolder_rel, collection_name)
-    try:
-        for item in sorted(os.listdir(current_download_dir)):
-            item_path = os.path.join(current_download_dir, item)
-            if os.path.isdir(item_path) and not item.startswith("."):
-                targets.append((item, item))
-    except Exception as e:
-        print(f"Error scanning directories: {e}")
-
     history = []
     from datetime import datetime
+    
+    try:
+        derivative_suffixes = (
+            ".dubbed.mp4",
+            ".hardsub.vi.mp4",
+            ".hardsub.bilingual.mp4",
+            ".dubbed.hardsub.vi.mp4",
+            ".dubbed.hardsub.bilingual.mp4",
+            ".backup.mp4"
+        )
+        import re
+        for folder, dirs, files in os.walk(current_download_dir):
+            mp4_files = [f for f in files if f.endswith(".mp4") and not any(f.endswith(sfx) for sfx in derivative_suffixes) and not re.search(r'\.f\d+\.mp4$', f)]
+            for f in mp4_files:
+                rel_to_base = os.path.relpath(folder, current_download_dir)
+                parts = rel_to_base.split(os.sep)
+                folder_basename = os.path.basename(folder)
+                m = re.match(r'^([a-zA-Z]+)_(\d{3,})_(\d{8})$', folder_basename)
+                if m:
+                    plat = m.group(1).capitalize()
+                    seq = m.group(2)
+                    d = m.group(3)
+                    col_name = f"{plat} #{seq} - {d[6:8]}/{d[4:6]}/{d[0:4]}"
+                else:
+                    col_name = parts[0] if parts[0] != '.' else "Chung"
+                
+                mp4_path = os.path.join(folder, f)
+                base_name = f[:-4]
+                thumb_name = f"{base_name}.thumb.jpg"
+                thumb_path = os.path.join(folder, thumb_name)
+                json_name = f"{base_name}.json"
+                json_path = os.path.join(folder, json_name)
 
-    for subfolder, col_name in targets:
-        folder = os.path.join(current_download_dir, subfolder) if subfolder else current_download_dir
-        if not os.path.exists(folder):
-            continue
-        try:
-            derivative_suffixes = (
-                ".dubbed.mp4",
-                ".hardsub.vi.mp4",
-                ".hardsub.bilingual.mp4",
-                ".dubbed.hardsub.vi.mp4",
-                ".dubbed.hardsub.bilingual.mp4",
-                ".backup.mp4"
-            )
-            files = [f for f in os.listdir(folder) if f.endswith(".mp4") and not any(f.endswith(sfx) for sfx in derivative_suffixes)]
-        except Exception:
-            continue
+                # Ensure first-frame thumbnail exists
+                if not os.path.exists(thumb_path):
+                    DouyinDownloader.extract_first_frame(mp4_path, thumb_path)
 
-        for f in files:
-            mp4_path = os.path.join(folder, f)
-            base_name = f[:-4]
-            thumb_name = f"{base_name}.thumb.jpg"
-            thumb_path = os.path.join(folder, thumb_name)
-            json_name = f"{base_name}.json"
-            json_path = os.path.join(folder, json_name)
-
-            # Ensure first-frame thumbnail exists
-            if not os.path.exists(thumb_path):
-                DouyinDownloader.extract_first_frame(mp4_path, thumb_path)
-
-            try:
-                stat = os.stat(mp4_path)
-                size_mb = round(stat.st_size / (1024 * 1024), 2)
-                created_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                size_mb = 0
-                created_time = "N/A"
-
-            # Try reading json metadata
-            title = base_name
-            author = "User"
-            platform = "facebook" if ("facebook" in f.lower() or "fb_" in f.lower()) else ("youtube" if ("youtube" in f.lower() or "yt_" in f.lower()) else "douyin")
-            duration = 0
-            resolution = "HD"
-            if os.path.exists(json_path):
                 try:
-                    with open(json_path, "r", encoding="utf-8") as jf:
-                        meta = json.load(jf)
-                        platform = meta.get("platform", platform)
-                        if platform in ["facebook", "youtube"]:
-                            title = meta.get("title", base_name)
-                            author = meta.get("author", "YouTube Creator" if platform == "youtube" else "Facebook User")
-                            resolution = meta.get("resolution", "HD")
-                            duration = meta.get("duration", 0)
-                        else:
-                            title = meta.get("desc", meta.get("title", base_name))
-                            author = meta.get("author", {}).get("nickname", "Douyin User") if isinstance(meta.get("author"), dict) else meta.get("author", "Douyin User")
-                            v_meta = meta.get("video", {})
-                            d_ms = v_meta.get("duration", 0)
-                            duration = round(d_ms / 1000, 1) if d_ms else meta.get("duration", 0)
-                            w, h = v_meta.get("width", 0), v_meta.get("height", 0)
-                            if w and h:
-                                resolution = f"{w}x{h}"
+                    stat = os.stat(mp4_path)
+                    size_mb = round(stat.st_size / (1024 * 1024), 2)
+                    created_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
-                    pass
+                    size_mb = 0
+                    created_time = "N/A"
 
-            # Ensure accurate duration using OpenCV
-            if duration <= 0:
-                duration = DouyinDownloader.get_video_duration(mp4_path)
+                # Try reading json metadata
+                title = base_name
+                author = "User"
+                platform = "facebook" if ("facebook" in f.lower() or "fb_" in f.lower()) else ("youtube" if ("youtube" in f.lower() or "yt_" in f.lower()) else "douyin")
+                duration = 0
+                resolution = "HD"
+                if os.path.exists(json_path):
+                    try:
+                        with open(json_path, "r", encoding="utf-8") as jf:
+                            meta = json.load(jf)
+                            platform = meta.get("platform", platform)
+                            if platform in ["facebook", "youtube"]:
+                                title = meta.get("title", base_name)
+                                author = meta.get("author", "YouTube Creator" if platform == "youtube" else "Facebook User")
+                                resolution = meta.get("resolution", "HD")
+                                duration = meta.get("duration", 0)
+                            else:
+                                title = meta.get("desc", meta.get("title", base_name))
+                                author = meta.get("author", {}).get("nickname", "Douyin User") if isinstance(meta.get("author"), dict) else meta.get("author", "Douyin User")
+                                v_meta = meta.get("video", {})
+                                d_ms = v_meta.get("duration", 0)
+                                duration = round(d_ms / 1000, 1) if d_ms else meta.get("duration", 0)
+                                w, h = v_meta.get("width", 0), v_meta.get("height", 0)
+                                if w and h:
+                                    resolution = f"{w}x{h}"
+                    except Exception:
+                        pass
 
-            rel_mp4 = os.path.relpath(mp4_path, current_download_dir).replace("\\", "/")
-            rel_thumb = os.path.relpath(thumb_path, current_download_dir).replace("\\", "/")
-            transcript_path = os.path.join(folder, f"{base_name}.transcript.json")
-            dubbed_mp4_path = os.path.join(folder, f"{base_name}.dubbed.mp4")
-            dubbed_mp3_path = os.path.join(folder, f"{base_name}.dubbed.mp3")
-            has_dubbed = os.path.exists(dubbed_mp4_path)
-            hardsub_vi_path = os.path.join(folder, f"{base_name}.hardsub.vi.mp4")
-            hardsub_bi_path = os.path.join(folder, f"{base_name}.hardsub.bilingual.mp4")
-            dubbed_hardsub_vi_path = os.path.join(folder, f"{base_name}.dubbed.hardsub.vi.mp4")
-            dubbed_hardsub_bi_path = os.path.join(folder, f"{base_name}.dubbed.hardsub.bilingual.mp4")
-            has_hardsub = os.path.exists(hardsub_vi_path) or os.path.exists(hardsub_bi_path)
-            has_dubbed_sub = os.path.exists(dubbed_hardsub_vi_path) or os.path.exists(dubbed_hardsub_bi_path)
-            has_sub_video = has_hardsub or has_dubbed_sub
-            backup_path = os.path.join(folder, f"{base_name}.backup.mp4")
-            has_backup = os.path.exists(backup_path)
+                # Ensure accurate duration using OpenCV
+                if duration <= 0:
+                    duration = DouyinDownloader.get_video_duration(mp4_path)
 
-            # Determine best video to play (dubbed_sub > dubbed > hardsub > original)
-            if has_dubbed_sub and os.path.exists(dubbed_hardsub_vi_path):
-                best_video_rel = os.path.relpath(dubbed_hardsub_vi_path, current_download_dir).replace("\\", "/")
-            elif has_dubbed_sub and os.path.exists(dubbed_hardsub_bi_path):
-                best_video_rel = os.path.relpath(dubbed_hardsub_bi_path, current_download_dir).replace("\\", "/")
-            elif has_dubbed:
-                best_video_rel = os.path.relpath(dubbed_mp4_path, current_download_dir).replace("\\", "/")
-            elif has_hardsub and os.path.exists(hardsub_vi_path):
-                best_video_rel = os.path.relpath(hardsub_vi_path, current_download_dir).replace("\\", "/")
-            elif has_hardsub and os.path.exists(hardsub_bi_path):
-                best_video_rel = os.path.relpath(hardsub_bi_path, current_download_dir).replace("\\", "/")
-            else:
-                best_video_rel = rel_mp4
+                rel_mp4 = os.path.relpath(mp4_path, current_download_dir).replace("\\", "/")
+                rel_thumb = os.path.relpath(thumb_path, current_download_dir).replace("\\", "/")
+                transcript_path = os.path.join(folder, f"{base_name}.transcript.json")
+                dubbed_mp4_path = os.path.join(folder, f"{base_name}.dubbed.mp4")
+                dubbed_mp3_path = os.path.join(folder, f"{base_name}.dubbed.mp3")
+                has_dubbed = os.path.exists(dubbed_mp4_path)
+                hardsub_vi_path = os.path.join(folder, f"{base_name}.hardsub.vi.mp4")
+                hardsub_bi_path = os.path.join(folder, f"{base_name}.hardsub.bilingual.mp4")
+                dubbed_hardsub_vi_path = os.path.join(folder, f"{base_name}.dubbed.hardsub.vi.mp4")
+                dubbed_hardsub_bi_path = os.path.join(folder, f"{base_name}.dubbed.hardsub.bilingual.mp4")
+                has_hardsub = os.path.exists(hardsub_vi_path) or os.path.exists(hardsub_bi_path)
+                has_dubbed_sub = os.path.exists(dubbed_hardsub_vi_path) or os.path.exists(dubbed_hardsub_bi_path)
+                has_sub_video = has_hardsub or has_dubbed_sub
+                backup_path = os.path.join(folder, f"{base_name}.backup.mp4")
+                has_backup = os.path.exists(backup_path)
 
-            history.append({
-                "filename": f,
-                "rel_path": rel_mp4,
-                "collection": col_name,
-                "platform": platform,
-                "title": title,
-                "author": author,
-                "size_mb": size_mb,
-                "created_time": created_time,
-                "duration": duration,
-                "resolution": resolution,
-                "has_thumb": os.path.exists(thumb_path),
-                "has_transcript": os.path.exists(transcript_path),
-                "has_dubbed": has_dubbed,
-                "has_hardsub": has_hardsub,
-                "has_sub_video": has_sub_video,
-                "has_backup": has_backup,
-                "backup_video_rel": os.path.relpath(backup_path, current_download_dir).replace("\\", "/") if has_backup else None,
-                "best_video_rel": best_video_rel,
-                "hardsub_video_rel": os.path.relpath(hardsub_vi_path if os.path.exists(hardsub_vi_path) else hardsub_bi_path, current_download_dir).replace("\\", "/") if has_hardsub else None,
-                "has_dubbed_sub": has_dubbed_sub,
-                "dubbed_sub_video_rel": os.path.relpath(dubbed_hardsub_vi_path if os.path.exists(dubbed_hardsub_vi_path) else dubbed_hardsub_bi_path, current_download_dir).replace("\\", "/") if has_dubbed_sub else None,
-                "dubbed_video_rel": os.path.relpath(dubbed_mp4_path, current_download_dir).replace("\\", "/") if has_dubbed else None,
-                "dubbed_audio_rel": os.path.relpath(dubbed_mp3_path, current_download_dir).replace("\\", "/") if os.path.exists(dubbed_mp3_path) else None,
-                "thumb_url": f"/api/history/thumbnail/{urllib.parse.quote(rel_thumb)}",
-                "stream_url": f"/api/history/stream/{urllib.parse.quote(rel_mp4)}"
-            })
+                final_mp4_path = os.path.join(folder, f"{base_name}.final.mp4")
+                has_final = os.path.exists(final_mp4_path)
+                rel_final = os.path.relpath(final_mp4_path, current_download_dir).replace("\\", "/") if has_final else None
+
+                # Determine best video to play (final > dubbed_sub > dubbed > hardsub > original)
+                if has_final:
+                    best_video_rel = rel_final
+                elif has_dubbed_sub and os.path.exists(dubbed_hardsub_vi_path):
+                    best_video_rel = os.path.relpath(dubbed_hardsub_vi_path, current_download_dir).replace("\\", "/")
+                elif has_dubbed_sub and os.path.exists(dubbed_hardsub_bi_path):
+                    best_video_rel = os.path.relpath(dubbed_hardsub_bi_path, current_download_dir).replace("\\", "/")
+                elif has_dubbed:
+                    best_video_rel = os.path.relpath(dubbed_mp4_path, current_download_dir).replace("\\", "/")
+                elif has_hardsub and os.path.exists(hardsub_vi_path):
+                    best_video_rel = os.path.relpath(hardsub_vi_path, current_download_dir).replace("\\", "/")
+                elif has_hardsub and os.path.exists(hardsub_bi_path):
+                    best_video_rel = os.path.relpath(hardsub_bi_path, current_download_dir).replace("\\", "/")
+                else:
+                    best_video_rel = rel_mp4
+
+                history.append({
+                    "filename": f,
+                    "rel_path": rel_mp4,
+                    "collection": col_name,
+                    "platform": platform,
+                    "title": title,
+                    "author": author,
+                    "size_mb": size_mb,
+                    "created_time": created_time,
+                    "duration": duration,
+                    "resolution": resolution,
+                    "has_thumb": os.path.exists(thumb_path),
+                    "has_transcript": os.path.exists(transcript_path),
+                    "has_dubbed": has_dubbed,
+                    "has_hardsub": has_hardsub,
+                    "has_sub_video": has_sub_video,
+                    "has_final": has_final,
+                    "final_video_rel": rel_final,
+                    "final_url": f"/api/history/stream/{urllib.parse.quote(rel_final)}" if has_final else None,
+                    "has_backup": has_backup,
+                    "backup_video_rel": os.path.relpath(backup_path, current_download_dir).replace("\\", "/") if has_backup else None,
+                    "best_video_rel": best_video_rel,
+                    "hardsub_video_rel": os.path.relpath(hardsub_vi_path if os.path.exists(hardsub_vi_path) else hardsub_bi_path, current_download_dir).replace("\\", "/") if has_hardsub else None,
+                    "has_dubbed_sub": has_dubbed_sub,
+                    "dubbed_sub_video_rel": os.path.relpath(dubbed_hardsub_vi_path if os.path.exists(dubbed_hardsub_vi_path) else dubbed_hardsub_bi_path, current_download_dir).replace("\\", "/") if has_dubbed_sub else None,
+                    "dubbed_video_rel": os.path.relpath(dubbed_mp4_path, current_download_dir).replace("\\", "/") if has_dubbed else None,
+                    "dubbed_audio_rel": os.path.relpath(dubbed_mp3_path, current_download_dir).replace("\\", "/") if os.path.exists(dubbed_mp3_path) else None,
+                    "thumb_url": f"/api/history/thumbnail/{urllib.parse.quote(rel_thumb)}",
+                    "stream_url": f"/api/history/stream/{urllib.parse.quote(rel_mp4)}"
+                })
+
+    except Exception as e:
+        print(f"Error reading history: {e}")
 
     # Sort newest first
     history.sort(key=lambda x: x["created_time"], reverse=True)
@@ -664,6 +715,14 @@ def _delete_video_and_associated_files(filepath: str) -> List[str]:
                 deleted.append(os.path.basename(p))
             except Exception as e:
                 print(f"Error removing {p}: {e}")
+                
+    # Check if directory is empty, if so, remove it (for the new per-video folder structure)
+    try:
+        if os.path.exists(dir_name) and not os.listdir(dir_name):
+            os.rmdir(dir_name)
+    except Exception:
+        pass
+        
     return deleted
 
 @app.delete("/api/history/{filepath:path}")
@@ -1351,6 +1410,337 @@ async def download_subtitle_file(filepath: str):
     media_type = "video/mp4" if full_path.endswith(".mp4") else "text/plain"
     return FileResponse(full_path, media_type=media_type, filename=os.path.basename(full_path))
 
+# --- Video Editor Endpoints ---
+
+def _run_video_edit_job(task_id: str, req_data: dict):
+    try:
+        edit_tasks[task_id] = {
+            "status": "processing",
+            "progress": 5,
+            "message": "Bắt đầu thiết lập Studio biên tập video...",
+            "output_video": None,
+            "error": None
+        }
+
+        def on_prog(pct: float, msg: str):
+            if task_id in edit_tasks:
+                edit_tasks[task_id]["progress"] = pct
+                edit_tasks[task_id]["message"] = msg
+
+        input_video = req_data["input_video"]
+        base_name = os.path.splitext(input_video)[0]
+        output_video = req_data.get("output_video") or f"{base_name}.final.mp4"
+
+        # Tự động tìm file phụ đề nếu người dùng muốn ép sub
+        srt_to_burn = None
+        if req_data.get("burn_subtitles"):
+            candidates = [
+                f"{base_name}.vi.srt",
+                f"{base_name}.bilingual.srt",
+                f"{base_name}.srt"
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    srt_to_burn = c
+                    break
+
+        # Tự động tìm file audio lồng tiếng nếu có
+        dubbed_audio = None
+        if req_data.get("use_dubbed_audio"):
+            cand_audio = f"{base_name}.dubbed.mp3"
+            if os.path.exists(cand_audio):
+                dubbed_audio = cand_audio
+
+        if req_data.get("clean_bgm") and not dubbed_audio:
+            on_prog(15, "Đang khử giọng nói gốc để giữ nhạc nền sạch...")
+            try:
+                acc_path = f"{base_name}.accompaniment.mp3"
+                vocal_remover.remove_vocals(input_video, acc_path)
+                dubbed_audio = acc_path
+            except Exception as ve:
+                print(f"[VideoEditor] Lỗi tách vocal: {ve}")
+
+        editor.render_final_video(
+            input_video=input_video,
+            output_video=output_video,
+            start_time=req_data.get("start_time"),
+            end_time=req_data.get("end_time"),
+            aspect_ratio=req_data.get("aspect_ratio", "original"),
+            blur_background=req_data.get("blur_background", True),
+            blur_bottom_sub=req_data.get("blur_bottom_sub", False),
+            flip_horizontal=req_data.get("flip_horizontal", False),
+            zoom_percent=req_data.get("zoom_percent", 1.0),
+            speed=req_data.get("speed", 1.0),
+            srt_path=srt_to_burn,
+            dubbed_audio_path=dubbed_audio,
+            font_size=req_data.get("font_size", 22),
+            font_color=req_data.get("font_color", "white"),
+            progress_callback=on_prog
+        )
+
+        edit_tasks[task_id]["status"] = "completed"
+        edit_tasks[task_id]["progress"] = 100
+        edit_tasks[task_id]["message"] = "Đã xuất video hoàn chỉnh thành công!"
+        edit_tasks[task_id]["output_video"] = output_video
+
+    except Exception as e:
+        if task_id in edit_tasks:
+            edit_tasks[task_id]["status"] = "error"
+            edit_tasks[task_id]["error"] = str(e)
+            edit_tasks[task_id]["message"] = f"Lỗi render: {str(e)}"
+
+@app.post("/api/video/edit")
+async def edit_video_endpoint(req: EditVideoRequest, background_tasks: BackgroundTasks):
+    """
+    Biên tập video: Cắt A-B, chuyển 9:16/16:9 với nền mờ, lật gương, zoom, làm mờ sub cũ, ép sub & lồng tiếng.
+    """
+    full_path = _resolve_safe_path(req.filepath)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="Không tìm thấy video nguồn")
+
+    base_name = os.path.splitext(full_path)[0]
+    out_video = f"{base_name}.final.mp4"
+    task_id = str(uuid.uuid4())
+
+    req_dict = req.dict()
+    req_dict["input_video"] = full_path
+    req_dict["output_video"] = out_video
+
+    edit_tasks[task_id] = {
+        "status": "pending",
+        "progress": 0,
+        "message": "Đang xếp hàng tiến trình render..."
+    }
+
+    import threading
+    t = threading.Thread(target=_run_video_edit_job, args=(task_id, req_dict), daemon=True)
+    t.start()
+
+    rel_out = os.path.relpath(out_video, current_download_dir).replace("\\", "/")
+    return {
+        "status": "started",
+        "task_id": task_id,
+        "output_video_rel": rel_out,
+        "output_filename": os.path.basename(out_video)
+    }
+
+@app.get("/api/video/edit/tasks/{task_id}")
+async def get_edit_video_task(task_id: str):
+    """Lấy trạng thái và tiến độ của tác vụ biên tập video."""
+    task = edit_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tác vụ biên tập")
+    res = dict(task)
+    if task.get("output_video") and os.path.exists(task["output_video"]):
+        rel_video = os.path.relpath(task["output_video"], current_download_dir).replace("\\", "/")
+        res["output_video_rel"] = rel_video
+        res["output_video_url"] = f"/api/history/stream/{urllib.parse.quote(rel_video)}"
+    return res
+
+# --- Batch Processing Endpoints ---
+
+def _run_batch_pipeline_worker(batch_id: str, req_data: dict):
+    try:
+        filepaths = req_data.get("filepaths", [])
+        total = len(filepaths)
+        batch_tasks[batch_id] = {
+            "status": "processing",
+            "total": total,
+            "current_index": 0,
+            "current_title": "",
+            "progress": 0,
+            "logs": [],
+            "completed": [],
+            "error": None
+        }
+
+        def log_msg(m: str):
+            if batch_id in batch_tasks:
+                batch_tasks[batch_id]["logs"].append(m)
+
+        for idx, fp in enumerate(filepaths):
+            full_path = _resolve_safe_path(fp)
+            if not os.path.exists(full_path):
+                log_msg(f"Bỏ qua: Không tìm thấy {fp}")
+                continue
+
+            base_name = os.path.splitext(full_path)[0]
+            title = os.path.basename(full_path)
+            batch_tasks[batch_id]["current_index"] = idx + 1
+            batch_tasks[batch_id]["current_title"] = title
+            step_base = int((idx / total) * 100)
+            batch_tasks[batch_id]["progress"] = step_base
+            log_msg(f"[{idx+1}/{total}] Bắt đầu xử lý video: {title}")
+
+            # 1. Bóc phụ đề (Transcribe) nếu chưa có
+            srt_path = f"{base_name}.srt"
+            transcript_json = f"{base_name}.transcript.json"
+            if not os.path.exists(srt_path):
+                log_msg(f"  -> Đang bóc phụ đề giọng nói Whisper...")
+                try:
+                    res_trans = transcriber.transcribe(full_path, model_size="base")
+                    with open(srt_path, "w", encoding="utf-8") as sf:
+                        sf.write(res_trans.get("srt", ""))
+                    with open(transcript_json, "w", encoding="utf-8") as jf:
+                        json.dump(res_trans, jf, ensure_ascii=False, indent=2)
+                except Exception as te:
+                    log_msg(f"  Lỗi bóc phụ đề: {te}")
+
+            # 2. Dịch thuật sang tiếng Việt nếu chưa có
+            vi_srt_path = f"{base_name}.vi.srt"
+            if not os.path.exists(vi_srt_path) and os.path.exists(srt_path):
+                log_msg(f"  -> Đang dịch thuật phụ đề bằng AI...")
+                try:
+                    cfg = load_app_config()
+                    api_key = cfg.get("gemini_api_key") or cfg.get("openai_api_key", "")
+                    provider = cfg.get("default_ai_provider", "gemini")
+                    with open(srt_path, "r", encoding="utf-8") as sf:
+                        orig_srt_content = sf.read()
+                    trans_res = translator.translate_srt_content(
+                        srt_content=orig_srt_content,
+                        provider=provider,
+                        api_key=api_key
+                    )
+                    with open(vi_srt_path, "w", encoding="utf-8") as vf:
+                        vf.write(trans_res.get("translated_srt", ""))
+                except Exception as tre:
+                    log_msg(f"  Lỗi dịch thuật: {tre}")
+
+            # 3. Lồng tiếng nếu chưa có
+            dubbed_mp3 = f"{base_name}.dubbed.mp3"
+            if not os.path.exists(dubbed_mp3) and os.path.exists(vi_srt_path):
+                log_msg(f"  -> Đang lồng tiếng AI...")
+                try:
+                    asyncio.run(dubber.execute_dubbing(
+                        video_path=full_path,
+                        transcript_data={"segments": []},
+                        single_voice=req_data.get("voice", "vi-VN-HoaiMyNeural"),
+                        clean_bgm=req_data.get("clean_bgm", True)
+                    ))
+                except Exception as de:
+                    log_msg(f"  Lỗi lồng tiếng: {de}")
+
+            # 4. Render video hoàn chỉnh bằng Studio Editor
+            final_mp4 = f"{base_name}.final.mp4"
+            log_msg(f"  -> Đang dựng & render video hoàn thiện (.final.mp4)...")
+            try:
+                editor.render_final_video(
+                    input_video=full_path,
+                    output_video=final_mp4,
+                    aspect_ratio=req_data.get("aspect_ratio", "9:16"),
+                    blur_background=req_data.get("blur_background", True),
+                    blur_bottom_sub=req_data.get("blur_bottom_sub", True),
+                    flip_horizontal=req_data.get("flip_horizontal", True),
+                    speed=req_data.get("speed", 1.05),
+                    srt_path=vi_srt_path if os.path.exists(vi_srt_path) else None,
+                    dubbed_audio_path=dubbed_mp3 if os.path.exists(dubbed_mp3) else None
+                )
+                rel_final = os.path.relpath(final_mp4, current_download_dir).replace("\\", "/")
+                batch_tasks[batch_id]["completed"].append(rel_final)
+                log_msg(f"  ✓ Hoàn tất xuất sắc: {os.path.basename(final_mp4)}")
+            except Exception as re:
+                log_msg(f"  Lỗi render: {re}")
+
+        batch_tasks[batch_id]["status"] = "completed"
+        batch_tasks[batch_id]["progress"] = 100
+        batch_tasks[batch_id]["current_title"] = "Đã hoàn thành toàn bộ danh sách!"
+        log_msg("=== TẤT CẢ VIDEO ĐÃ ĐƯỢC XỬ LÝ HOÀN TẤT ===")
+
+    except Exception as ge:
+        if batch_id in batch_tasks:
+            batch_tasks[batch_id]["status"] = "error"
+            batch_tasks[batch_id]["error"] = str(ge)
+
+@app.post("/api/batch/run")
+async def batch_run_endpoint(req: BatchRunRequest):
+    """Khởi chạy quy trình xử lý hàng loạt từ A-Z cho các video đã chọn."""
+    if not req.filepaths:
+        raise HTTPException(status_code=400, detail="Danh sách video rỗng")
+
+    batch_id = str(uuid.uuid4())
+    import threading
+    t = threading.Thread(target=_run_batch_pipeline_worker, args=(batch_id, req.dict()), daemon=True)
+    t.start()
+
+    return {
+        "status": "started",
+        "batch_id": batch_id,
+        "total": len(req.filepaths)
+    }
+
+@app.get("/api/batch/status/{batch_id}")
+async def get_batch_status_endpoint(batch_id: str):
+    """Theo dõi tiến trình hàng loạt trực tiếp."""
+    task = batch_tasks.get(batch_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên xử lý hàng loạt")
+    return task
+
+# ------------------------------------------------------------------
+# CROP + TRIM VIDEO API (Tab 5)
+# ------------------------------------------------------------------
+
+@app.post("/api/video/crop-trim")
+async def start_crop_trim(req: CropTrimRequest):
+    """Khởi động tác vụ crop khung hình và/hoặc trim thời gian."""
+    full_path = _resolve_safe_path(req.filepath)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="Không tìm thấy video")
+
+    # Validate crop
+    crop = None
+    if req.crop:
+        crop = {
+            "x": max(0, int(req.crop.get("x", 0))),
+            "y": max(0, int(req.crop.get("y", 0))),
+            "w": max(1, int(req.crop.get("w", 0))),
+            "h": max(1, int(req.crop.get("h", 0))),
+        }
+
+    # Validate trim
+    trim = None
+    if req.trim:
+        t_start = float(req.trim.get("start", 0) or 0)
+        t_end = float(req.trim.get("end", 0) or 0)
+        if t_start >= 0 and (t_end > t_start or t_end == 0):
+            trim = {"start": t_start, "end": t_end}
+
+    if not crop and not trim:
+        raise HTTPException(status_code=400, detail="Phải có ít nhất crop hoặc trim hợp lệ")
+
+    base_name = os.path.splitext(full_path)[0]
+    output_path = f"{base_name}.cropped.mp4"
+
+    task_id = str(uuid.uuid4())
+
+    async def _run():
+        await editor.execute_crop_trim(
+            task_id=task_id,
+            input_video=full_path,
+            output_video=output_path,
+            crop=crop,
+            trim=trim,
+            lossless_trim=bool(req.lossless_trim)
+        )
+
+    asyncio.create_task(_run())
+
+    return {"task_id": task_id, "status": "started"}
+
+
+@app.get("/api/video/crop-trim/tasks/{task_id}")
+async def get_crop_trim_task(task_id: str):
+    """Lấy trạng thái tác vụ crop/trim."""
+    task = editor.tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tác vụ")
+
+    result = dict(task)
+    if task.get("output_video") and os.path.exists(task["output_video"]):
+        rel = os.path.relpath(task["output_video"], current_download_dir).replace("\\", "/")
+        result["output_video_rel"] = rel
+        result["output_video_url"] = f"/api/history/stream/{urllib.parse.quote(rel)}"
+    return result
 
 # Serve Frontend
 web_dir = os.path.join(BASE_DIR, "web")

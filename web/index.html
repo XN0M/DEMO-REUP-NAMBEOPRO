@@ -225,10 +225,16 @@
           <span class="text-slate-600">|</span>
           <span id="historySelectedCount" class="text-xs text-slate-400">Đã chọn 0 video</span>
         </div>
-        <button id="btnDeleteSelectedHistory" onclick="confirmDeleteSelectedHistory()" disabled class="flex items-center space-x-1.5 bg-rose-950/40 hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-950/40 disabled:cursor-not-allowed text-rose-400 hover:text-white border border-rose-900/40 text-xs font-medium px-3.5 py-1.5 rounded-xl transition shadow">
-          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-          <span id="btnDeleteSelectedHistoryText">Xóa video đã chọn</span>
-        </button>
+        <div class="flex items-center space-x-2">
+          <button id="btnBatchRun" onclick="openBatchModal()" disabled class="flex items-center space-x-1.5 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-1.5 rounded-xl transition shadow shadow-indigo-600/30">
+            <i data-lucide="zap" class="w-3.5 h-3.5 fill-current"></i>
+            <span>🚀 Xử lý hàng loạt (Batch Run)</span>
+          </button>
+          <button id="btnDeleteSelectedHistory" onclick="confirmDeleteSelectedHistory()" disabled class="flex items-center space-x-1.5 bg-rose-950/40 hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-rose-950/40 disabled:cursor-not-allowed text-rose-400 hover:text-white border border-rose-900/40 text-xs font-medium px-3.5 py-1.5 rounded-xl transition shadow">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span id="btnDeleteSelectedHistoryText">Xóa video đã chọn</span>
+          </button>
+        </div>
       </div>
 
       <!-- History Grid -->
@@ -250,9 +256,9 @@
 
   <!-- Video Preview Modal -->
   <div id="previewModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full overflow-y-auto shadow-2xl flex flex-col max-h-[94vh]">
       <!-- Modal Header -->
-      <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-slate-900/95 backdrop-blur z-20">
         <h3 id="modalTitle" class="text-sm font-semibold text-slate-200 truncate pr-4">Xem trước video</h3>
         <button onclick="closePreviewModal()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition">
           <i data-lucide="x" class="w-5 h-5"></i>
@@ -260,8 +266,8 @@
       </div>
 
       <!-- Video Area -->
-      <div class="bg-black flex items-center justify-center relative min-h-[380px] flex-1 group overflow-hidden" id="videoContainer">
-        <video id="previewVideoPlayer" class="max-h-[65vh] w-full object-contain cursor-pointer" preload="metadata" playsinline>
+      <div class="bg-black flex items-center justify-center relative min-h-[260px] flex-1 group overflow-hidden" id="videoContainer">
+        <video id="previewVideoPlayer" class="max-h-[46vh] w-full object-contain cursor-pointer" preload="metadata" playsinline>
           Trình duyệt của bạn không hỗ trợ phát video này.
         </video>
 
@@ -357,6 +363,194 @@
           </div>
         </div>
       </div>
+
+      <!-- Studio Video Editor & Export Bar (Chỉ hiện cho video trong thư viện) -->
+      <div id="editorPanel" class="hidden bg-slate-900 border-t border-slate-800 p-4 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+          <div class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span class="text-xs font-semibold text-amber-300 uppercase tracking-wider">Studio Biên Tập & Xuất Video Chuẩn Reup</span>
+          </div>
+          <span class="text-[11px] text-slate-400 hidden sm:inline">Tự động ghép hiệu ứng, làm mờ sub & lồng tiếng 1 chạm</span>
+        </div>
+
+        <!-- Row 1: Trim & Aspect Ratio -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <!-- Trim A-B -->
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-300 font-medium flex items-center gap-1.5">
+                <i data-lucide="scissors" class="w-3.5 h-3.5 text-rose-400"></i>
+                <span>Cắt đoạn video (Trim A ➔ B):</span>
+              </span>
+              <button onclick="previewTrimSegment()" class="text-[10px] text-indigo-400 hover:underline">Phát thử đoạn A-B</button>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button onclick="setTrimPointA()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 text-[11px] transition">
+                [⏱ Mốc Đầu A]
+              </button>
+              <input id="trimStartInput" type="number" step="0.1" min="0" value="0" placeholder="0s" class="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-center text-white text-xs outline-none" />
+              <span class="text-slate-500">➔</span>
+              <button onclick="setTrimPointB()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 text-[11px] transition">
+                [⏱ Mốc Cuối B]
+              </button>
+              <input id="trimEndInput" type="number" step="0.1" min="0" value="0" placeholder="Hết" class="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-center text-white text-xs outline-none" />
+              <button onclick="resetTrim()" class="text-[11px] text-slate-400 hover:text-slate-200 p-1" title="Đặt lại toàn bộ video">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Aspect Ratio & Blur BG -->
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2">
+            <span class="text-slate-300 font-medium flex items-center gap-1.5">
+              <i data-lucide="smartphone" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <span>Tỉ lệ khung hình (Aspect Ratio):</span>
+            </span>
+            <div class="flex items-center space-x-2">
+              <select id="editorAspectRatio" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs outline-none">
+                <option value="original">Gốc (Giữ nguyên kích thước)</option>
+                <option value="9:16" selected>9:16 (Dọc TikTok / Reels / Shorts) + Mờ nền</option>
+                <option value="16:9">16:9 (Ngang YouTube) + Mờ nền</option>
+                <option value="1:1">1:1 (Vuông)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: Anti-Copyright & Filter Options -->
+        <div class="flex flex-wrap items-center justify-between gap-3 text-xs bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
+          <div class="flex flex-wrap items-center gap-4">
+            <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300 hover:text-white">
+              <input type="checkbox" id="chkFlipHorizontal" checked class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-rose-500 focus:ring-rose-500" />
+              <span>Lật gương (Flip)</span>
+            </label>
+            <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300 hover:text-white">
+              <input type="checkbox" id="chkZoom" checked class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-rose-500 focus:ring-rose-500" />
+              <span>Zoom nhẹ 105%</span>
+            </label>
+            <label class="flex items-center space-x-1.5 cursor-pointer text-amber-300 hover:text-amber-200">
+              <input type="checkbox" id="chkBlurBottomSub" checked class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-amber-500" />
+              <span>Làm mờ phụ đề cũ (Đáy)</span>
+            </label>
+            <label class="flex items-center space-x-1.5 cursor-pointer text-emerald-300 hover:text-emerald-200">
+              <input type="checkbox" id="chkCleanVocal" checked class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-emerald-500 focus:ring-emerald-500" />
+              <span>Tách sạch giọng gốc</span>
+            </label>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <span class="text-slate-400 text-[11px]">Tốc độ:</span>
+            <select id="editorSpeed" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-[11px] outline-none">
+              <option value="1.0">1.0x (Chuẩn)</option>
+              <option value="1.05" selected>1.05x (Lách bản quyền)</option>
+              <option value="1.1">1.1x</option>
+              <option value="1.15">1.15x</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Render Button & Progress Bar -->
+        <div class="space-y-2">
+          <div id="renderProgressBox" class="hidden space-y-1.5 bg-slate-950 p-3 rounded-xl border border-indigo-900/50">
+            <div class="flex justify-between text-xs">
+              <span id="renderProgressMsg" class="text-indigo-300 font-medium">Đang render...</span>
+              <span id="renderProgressPct" class="text-slate-400 font-mono">0%</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div id="renderProgressBar" class="bg-gradient-to-r from-indigo-500 to-rose-500 h-full w-0 transition-all duration-300"></div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end space-x-2">
+            <button id="btnRenderFinal" onclick="startRenderFinalVideo()" class="flex items-center space-x-2 bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition shadow-lg shadow-rose-600/20">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+              <span>Xuất Video Hoàn Thiện (.final.mp4)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Run Modal -->
+  <div id="batchModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center space-x-3 text-indigo-400">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center">
+            <i data-lucide="zap" class="w-5 h-5 fill-current"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-semibold text-white">Xử Lý Hàng Loạt (Batch Pipeline)</h3>
+            <p id="batchModalSubtitle" class="text-xs text-slate-400">Đã chọn 0 video</p>
+          </div>
+        </div>
+        <button onclick="closeBatchModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+          <span class="text-slate-300 font-medium">Giọng đọc lồng tiếng AI:</span>
+          <select id="batchVoiceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 outline-none">
+            <option value="vi-VN-HoaiMyNeural">Hoài My (Nữ - Truyền cảm, Tự nhiên)</option>
+            <option value="vi-VN-NamMinhNeural">Nam Minh (Nam - Chuẩn giọng, Trầm ấm)</option>
+          </select>
+        </div>
+
+        <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+          <span class="text-slate-300 font-medium">Tỉ lệ khung hình đầu ra:</span>
+          <select id="batchAspectSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 outline-none">
+            <option value="9:16" selected>9:16 (Dọc TikTok / Reels / Shorts) + Mờ nền</option>
+            <option value="16:9">16:9 (Ngang YouTube) + Mờ nền</option>
+            <option value="original">Gốc (Giữ nguyên kích thước)</option>
+          </select>
+        </div>
+
+        <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+          <span class="text-slate-300 font-medium">Hiệu ứng chống bản quyền & Hoàn thiện:</span>
+          <div class="grid grid-cols-2 gap-2 text-slate-300">
+            <label class="flex items-center space-x-1.5 cursor-pointer">
+              <input type="checkbox" id="batchChkBlurSub" checked class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-amber-500" />
+              <span>Làm mờ sub cũ (Đáy)</span>
+            </label>
+            <label class="flex items-center space-x-1.5 cursor-pointer">
+              <input type="checkbox" id="batchChkCleanVocal" checked class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-emerald-500" />
+              <span>Tách sạch giọng gốc</span>
+            </label>
+            <label class="flex items-center space-x-1.5 cursor-pointer">
+              <input type="checkbox" id="batchChkFlip" checked class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-rose-500" />
+              <span>Lật gương ngang</span>
+            </label>
+            <label class="flex items-center space-x-1.5 cursor-pointer">
+              <input type="checkbox" id="batchChkSub" checked class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-indigo-500" />
+              <span>Ép phụ đề tiếng Việt</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Live Progress Container (Hidden until running) -->
+        <div id="batchProgressContainer" class="hidden space-y-2 bg-slate-950 p-3 rounded-xl border border-indigo-900/50">
+          <div class="flex justify-between font-medium">
+            <span id="batchStatusText" class="text-indigo-300">Đang chuẩn bị...</span>
+            <span id="batchPercentText" class="text-slate-400 font-mono">0%</span>
+          </div>
+          <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+            <div id="batchProgressBar" class="bg-gradient-to-r from-indigo-500 to-rose-500 h-full w-0 transition-all duration-300"></div>
+          </div>
+          <div id="batchLogBox" class="max-h-28 overflow-y-auto font-mono text-[11px] text-slate-400 bg-slate-900 p-2 rounded-lg border border-slate-800 space-y-0.5 custom-scrollbar"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+        <button onclick="closeBatchModal()" class="px-4 py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Đóng</button>
+        <button id="btnStartBatch" onclick="startBatchRun()" class="px-5 py-2 text-xs rounded-xl bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white font-semibold transition flex items-center gap-1.5 shadow-lg shadow-indigo-600/25">
+          <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+          <span>Bắt đầu quy trình hàng loạt</span>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -385,7 +579,7 @@
   </div>
 
   <!-- Replace Original Video Confirmation Modal -->
-  <div id="replaceConfirmModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+  <div id="replaceConfirmModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4 hidden">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
       <div class="flex items-center space-x-3 text-amber-400">
         <div class="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
@@ -623,6 +817,10 @@
             <span>4. Lồng tiếng (Dubbing)</span>
             <span id="tab4DubbedBadge" class="hidden bg-rose-500/20 text-rose-400 text-[10px] px-1.5 py-0.2 rounded-full border border-rose-500/30">Đã xong</span>
           </button>
+          <button id="stepTab5" onclick="switchTranscriptStep(5)" class="px-3 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="scissors" class="w-3.5 h-3.5 text-teal-400"></i>
+            <span>5. Chỉnh sửa</span>
+          </button>
         </div>
 
         <button onclick="closeTranscriptModal()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition">
@@ -668,7 +866,7 @@
                 <span>Trích xuất giọng nói bằng Faster-Whisper AI (Offline)</span>
               </h4>
               <p class="text-xs text-slate-400 mt-1">
-                Tự động nhận diện toàn bộ câu thoại tiếng Trung và mốc thời gian chính xác từng mili-giây. Chạy 100% trên máy tính CPU, không mất phí và không cần mạng.
+                Tự động nhận diện câu thoại và mốc thời gian từ giọng nói — hỗ trợ <strong class="text-slate-300">đa ngôn ngữ</strong> (Trung, Anh, Nhật, Hàn, Việt...). Chạy 100% offline trên CPU, không mất phí, không cần mạng.
               </p>
             </div>
 
@@ -1303,9 +1501,190 @@
           </div>
         </div>
 
+        <!-- STEP 5: CROP & TRIM EDITOR -->
+        <div id="stepContent5" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 max-w-5xl mx-auto w-full custom-scrollbar hidden">
+
+          <!-- Header -->
+          <div class="bg-gradient-to-r from-teal-950/60 via-slate-900/40 to-slate-900 border border-teal-800/50 rounded-2xl p-4 space-y-1.5">
+            <div class="flex items-center space-x-2 text-teal-300 font-semibold text-xs">
+              <i data-lucide="scissors" class="w-4 h-4 text-teal-400 shrink-0"></i>
+              <span>Chỉnh sửa Video — Crop khung hình &amp; Trim thời gian</span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Cắt vùng khung hình muốn giữ lại bằng cách kéo thả trên ảnh preview, hoặc chọn đoạn thời gian cần giữ. Video sau khi xử lý sẽ thay thế video gốc (có sao lưu tự động).
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+            <!-- LEFT: Controls Panel -->
+            <div class="space-y-4">
+
+              <!-- Crop Toggle -->
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <i data-lucide="crop" class="w-4 h-4 text-teal-400"></i>
+                    <span class="text-xs font-semibold text-white">Crop khung hình</span>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="cropToggle" onchange="onCropToggle()" class="sr-only peer">
+                    <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-600"></div>
+                  </label>
+                </div>
+                <div id="cropControls" class="hidden space-y-3">
+                  <p class="text-[11px] text-slate-400">Kéo thả trên ảnh preview bên phải để chọn vùng cần giữ.</p>
+                  <div class="grid grid-cols-2 gap-2 text-[11px]">
+                    <div class="bg-slate-950 rounded-lg p-2 border border-slate-800">
+                      <span class="text-slate-400 block">Điểm bắt đầu (X, Y)</span>
+                      <span id="cropXYDisplay" class="text-teal-300 font-mono font-semibold">0, 0</span>
+                    </div>
+                    <div class="bg-slate-950 rounded-lg p-2 border border-slate-800">
+                      <span class="text-slate-400 block">Kích thước (W × H)</span>
+                      <span id="cropWHDisplay" class="text-teal-300 font-mono font-semibold">—</span>
+                    </div>
+                  </div>
+                  <button onclick="resetCropSelection()" class="text-[11px] text-slate-400 hover:text-white underline">Đặt lại vùng chọn</button>
+                </div>
+              </div>
+
+              <!-- Trim Toggle -->
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <i data-lucide="timer" class="w-4 h-4 text-indigo-400"></i>
+                    <span class="text-xs font-semibold text-white">Trim thời gian</span>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="trimToggle" onchange="onTrimToggle()" class="sr-only peer">
+                    <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+                <div id="trimControls" class="hidden space-y-3">
+                  <!-- Timeline dual-range -->
+                  <div class="space-y-2">
+                    <div id="trimTimelineTrack" class="relative h-8 bg-slate-950 rounded-lg border border-slate-700 cursor-pointer select-none overflow-hidden">
+                      <div id="trimRangeHighlight" class="absolute top-0 bottom-0 bg-indigo-600/30 border-x border-indigo-500 pointer-events-none" style="left:0%;width:100%"></div>
+                      <div id="trimHandleStart" class="absolute top-0 bottom-0 w-3 bg-indigo-500 rounded-sm cursor-ew-resize flex items-center justify-center" style="left:0%">
+                        <span class="text-white text-[8px] leading-none">◀</span>
+                      </div>
+                      <div id="trimHandleEnd" class="absolute top-0 bottom-0 w-3 bg-indigo-500 rounded-sm cursor-ew-resize flex items-center justify-center" style="right:0%;transform:translateX(0)">
+                        <span class="text-white text-[8px] leading-none">▶</span>
+                      </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 text-[11px]">
+                      <div class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 flex items-center gap-1.5">
+                        <span class="text-slate-400">Từ:</span>
+                        <input type="number" id="trimStartInput" min="0" step="0.5" value="0" onchange="onTrimInputChange()" class="bg-transparent text-indigo-300 font-mono w-full outline-none">
+                        <span class="text-slate-500">s</span>
+                      </div>
+                      <div class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 flex items-center gap-1.5">
+                        <span class="text-slate-400">Đến:</span>
+                        <input type="number" id="trimEndInput" min="0" step="0.5" value="0" onchange="onTrimInputChange()" class="bg-transparent text-indigo-300 font-mono w-full outline-none">
+                        <span class="text-slate-500">s</span>
+                      </div>
+                    </div>
+                    <p id="trimDurationLabel" class="text-[11px] text-slate-500">Thời lượng giữ lại: <span class="text-indigo-300 font-mono font-semibold">—</span></p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quality Option -->
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
+                <span class="text-xs font-semibold text-slate-300">Chế độ xuất</span>
+                <label class="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" id="losslessTrimCheck" checked class="mt-0.5 accent-teal-500">
+                  <div>
+                    <span class="text-[11px] text-white font-medium">Lossless (không mất chất lượng)</span>
+                    <p class="text-[10px] text-slate-400">Nhanh hơn, nhưng điểm cắt có thể lệch ±0.5s tới keyframe gần nhất. Tắt nếu cần cắt chính xác từng frame.</p>
+                  </div>
+                </label>
+              </div>
+
+              <!-- Process Button -->
+              <button id="btnStartCropTrim" onclick="startCropTrimProcess()" class="w-full py-3 px-4 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-semibold text-sm rounded-xl shadow-lg shadow-teal-600/20 transition flex items-center justify-center gap-2">
+                <i data-lucide="scissors" class="w-4 h-4"></i>
+                <span>Bắt đầu xử lý video</span>
+              </button>
+
+              <!-- Progress -->
+              <div id="cropTrimProgressBox" class="hidden space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                  <span id="cropTrimProgressText" class="text-teal-300 font-medium flex items-center gap-1.5">
+                    <i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i>
+                    <span>Đang xử lý...</span>
+                  </span>
+                  <span id="cropTrimProgressPct" class="font-mono text-slate-400 font-semibold">0%</span>
+                </div>
+                <div class="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
+                  <div id="cropTrimProgressBar" class="bg-gradient-to-r from-teal-500 to-emerald-400 h-2 rounded-full transition-all duration-300" style="width:0%"></div>
+                </div>
+              </div>
+
+              <!-- Result Card -->
+              <div id="cropTrimResultCard" class="hidden bg-slate-950 border border-teal-500/30 rounded-xl p-3.5 space-y-3">
+                <div class="flex items-center gap-2 text-xs font-medium text-teal-400">
+                  <i data-lucide="check-circle" class="w-4 h-4"></i>
+                  <span>Xử lý video thành công!</span>
+                </div>
+                <div class="relative aspect-video max-h-44 bg-black rounded-lg overflow-hidden border border-slate-800">
+                  <video id="cropTrimPreviewVideo" controls class="w-full h-full object-contain"></video>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button onclick="confirmApplyReplaceOriginal(currentTranscriptRelPath, cropTrimOutputRel)" class="flex-1 py-2 px-3 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-400 hover:to-emerald-500 text-slate-950 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow">
+                    <i data-lucide="check-check" class="w-3.5 h-3.5"></i>
+                    <span>Áp dụng &amp; Thay thế video gốc</span>
+                  </button>
+                  <button onclick="openDownloadFolder()" class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs transition">
+                    <i data-lucide="folder" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- RIGHT: Canvas Preview -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <i data-lucide="image" class="w-3.5 h-3.5 text-teal-400"></i>
+                  Kéo thả để chọn vùng Crop
+                </span>
+                <span id="cropCanvasInfo" class="text-[10px] text-slate-500 font-mono">Chưa tải frame</span>
+              </div>
+              <div class="relative bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-xl" style="touch-action:none">
+                <canvas id="cropCanvas"
+                  class="w-full block cursor-crosshair"
+                  onmousedown="onCropMouseDown(event)"
+                  onmousemove="onCropMouseMove(event)"
+                  onmouseup="onCropMouseUp(event)"
+                  onmouseleave="onCropMouseUp(event)"
+                  ontouchstart="onCropTouchStart(event)"
+                  ontouchmove="onCropTouchMove(event)"
+                  ontouchend="onCropMouseUp(event)">
+                </canvas>
+                <div id="cropCanvasPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
+                  <i data-lucide="image" class="w-8 h-8 opacity-40"></i>
+                  <span>Mở video để tải frame preview</span>
+                </div>
+              </div>
+              <p class="text-[10px] text-slate-500">
+                💡 Frame preview được chụp từ vị trí hiện tại của player video. Tua video đến đúng cảnh muốn crop rồi chuyển sang Tab 5 này.
+              </p>
+            </div>
+
+          </div>
+        </div>
+        <!-- END stepContent5 -->
+
       </div>
     </div>
   </div>
+
+  <!-- ============================================================ -->
+  <!--  STEP 5: VIDEO EDITOR — CROP & TRIM                          -->
+  <!-- ============================================================ -->
+  <!-- NOTE: stepContent5 is placed INSIDE transcriptModal's flex column -->
 
   <!-- Subtitle Video Export Modal (Hardsub / Softsub) -->
   <div id="subtitleExportModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 hidden">
@@ -1373,7 +1752,7 @@
                   <span class="text-rose-400 font-medium block">Muốn lồng tiếng AI tiếng Việt?</span>
                   <span class="text-slate-400 text-[10px]">Chuyển sang Bước 4 để chọn giọng đọc AI và xuất trọn gói.</span>
                 </div>
-                <button type="button" onclick="closeSubtitleExportModal(); switchTranscriptTab('dub');" class="shrink-0 text-xs bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1.5 rounded-lg font-medium transition flex items-center gap-1 shadow">
+                <button type="button" onclick="closeSubtitleExportModal(); switchTranscriptStep(4);" class="shrink-0 text-xs bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1.5 rounded-lg font-medium transition flex items-center gap-1 shadow">
                   <span>Sang Bước 4</span>
                   <i data-lucide="arrow-right" class="w-3 h-3"></i>
                 </button>
@@ -1555,7 +1934,7 @@
               <i data-lucide="play-square" class="w-3.5 h-3.5 text-emerald-400"></i>
               <span class="text-[11px] hidden sm:inline">Mở trên máy</span>
             </button>
-            <button onclick="openFolder()" class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs transition" title="Mở thư mục chứa file">
+            <button onclick="openDownloadFolder()" class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs transition" title="Mở thư mục chứa file">
               <i data-lucide="folder" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -2764,6 +3143,11 @@
                   <i data-lucide="subtitles" class="w-2.5 h-2.5"></i> Có phụ đề
                 </span>
               ` : ''}
+              ${v.has_final ? `
+                <span class="text-[9px] font-bold bg-gradient-to-r from-emerald-600 to-teal-600 px-1.5 py-0.5 rounded text-white flex items-center gap-1 shadow">
+                  <i data-lucide="sparkles" class="w-2.5 h-2.5"></i> Chuẩn Reup
+                </span>
+              ` : ''}
               ${v.has_backup ? `
                 <span class="text-[9px] font-bold bg-amber-500/95 text-slate-950 backdrop-blur px-1.5 py-0.5 rounded flex items-center gap-1 shadow" title="Đã thay thế video gốc bằng bản chỉnh sửa hoàn thiện (Có file sao lưu .backup.mp4)">
                   <i data-lucide="shield-check" class="w-2.5 h-2.5"></i> Đã thay thế gốc
@@ -2795,6 +3179,10 @@
               <button onclick="openPreviewModal('${encodeURIComponent(v.rel_path)}', true)" class="flex-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-1.5 rounded-xl transition flex items-center justify-center gap-1">
                 <i data-lucide="eye" class="w-3.5 h-3.5 text-indigo-400"></i>
                 <span>Xem lại</span>
+              </button>
+              <button onclick="openStudioModal('${encodeURIComponent(v.rel_path)}')" class="text-xs bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-xl font-medium transition flex items-center gap-1 shadow-sm" title="Mở Studio Reup: Cắt A-B, Tỉ lệ 9:16 TikTok, Mờ Sub cũ, Khử giọng AI">
+                <i data-lucide="scissors" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Studio Reup</span>
               </button>
               <button onclick="openTranscriptModal('${encodeURIComponent(v.rel_path)}')" class="text-xs ${v.has_transcript ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-purple-950/40 hover:bg-purple-800/50 text-purple-300'} px-2.5 py-1.5 rounded-xl border border-purple-700/40 transition flex items-center gap-1" title="Trích xuất lời thoại & Dịch kịch bản">
                 <i data-lucide="subtitles" class="w-3.5 h-3.5"></i>
@@ -2849,6 +3237,10 @@
         if (btnText) {
           btnText.innerText = count > 0 ? `Xóa ${count} video đã chọn` : 'Xóa video đã chọn';
         }
+      }
+      const btnBatch = document.getElementById('btnBatchRun');
+      if (btnBatch) {
+        btnBatch.disabled = count === 0;
       }
       const allBoxes = document.querySelectorAll('.history-checkbox');
       const checkAll = document.getElementById('checkAllHistory');
@@ -2965,6 +3357,7 @@
       const btnActionText = document.getElementById('modalBtnActionText');
       const seekBar = document.getElementById('videoSeekBar');
       const speedSelect = document.getElementById('speedSelect');
+      const edPanel = document.getElementById('editorPanel');
 
       const btnTrans = document.getElementById('modalBtnTranscript');
       let streamUrl = '';
@@ -2985,9 +3378,17 @@
             openTranscriptModal(encodeURIComponent(relPath));
           };
         }
+        if (edPanel) {
+          edPanel.classList.remove('hidden');
+          document.getElementById('trimStartInput').value = 0;
+          document.getElementById('trimEndInput').value = (item && item.duration) ? Math.floor(item.duration * 10) / 10 : 0;
+          const progBox = document.getElementById('renderProgressBox');
+          if (progBox) progBox.classList.add('hidden');
+        }
       } else {
         currentPreviewRelPath = '';
         if (btnTrans) btnTrans.classList.add('hidden');
+        if (edPanel) edPanel.classList.add('hidden');
         const v = videosData.find(item => item.id === idOrRelPath);
         if (!v) return;
         const pTag = v.platform === 'youtube' ? '[YouTube] ' : (v.platform === 'facebook' ? '[Facebook] ' : '[Douyin] ');
@@ -3018,6 +3419,272 @@
       player.pause();
       player.src = '';
       modal.classList.add('hidden');
+      const edPanel = document.getElementById('editorPanel');
+      if (edPanel) edPanel.classList.add('hidden');
+    }
+
+    function openStudioModal(relPath) {
+      openPreviewModal(relPath, true);
+      setTimeout(() => {
+        const edPanel = document.getElementById('editorPanel');
+        if (edPanel) {
+          edPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 250);
+    }
+
+    // ----------------------------------------------------
+    // STUDIO VIDEO EDITOR & TRIM FUNCTIONS
+    // ----------------------------------------------------
+    function setTrimPointA() {
+      const player = document.getElementById('previewVideoPlayer');
+      const t = Math.floor(player.currentTime * 10) / 10;
+      document.getElementById('trimStartInput').value = t;
+      showToast(`Đã đặt mốc Bắt đầu A: ${t}s`);
+    }
+
+    function setTrimPointB() {
+      const player = document.getElementById('previewVideoPlayer');
+      const t = Math.floor(player.currentTime * 10) / 10;
+      document.getElementById('trimEndInput').value = t;
+      showToast(`Đã đặt mốc Kết thúc B: ${t}s`);
+    }
+
+    function resetTrim() {
+      const player = document.getElementById('previewVideoPlayer');
+      document.getElementById('trimStartInput').value = 0;
+      document.getElementById('trimEndInput').value = Math.floor((player.duration || 0) * 10) / 10;
+      showToast('Đã đặt lại mốc cắt toàn bộ video');
+    }
+
+    function previewTrimSegment() {
+      const player = document.getElementById('previewVideoPlayer');
+      const start = parseFloat(document.getElementById('trimStartInput').value) || 0;
+      const end = parseFloat(document.getElementById('trimEndInput').value) || player.duration;
+      player.currentTime = start;
+      player.play();
+      
+      const checkEnd = () => {
+        if (player.currentTime >= end) {
+          player.pause();
+          player.removeEventListener('timeupdate', checkEnd);
+        }
+      };
+      player.addEventListener('timeupdate', checkEnd);
+      showToast(`Đang phát đoạn cắt: ${start}s ➔ ${end}s`);
+    }
+
+    async function startRenderFinalVideo() {
+      if (!currentPreviewRelPath) {
+        showToast('Vui lòng chọn video để render', true);
+        return;
+      }
+      
+      const start = parseFloat(document.getElementById('trimStartInput').value) || 0;
+      const end = parseFloat(document.getElementById('trimEndInput').value) || null;
+      const aspect = document.getElementById('editorAspectRatio').value;
+      const flip = document.getElementById('chkFlipHorizontal').checked;
+      const zoom = document.getElementById('chkZoom').checked ? 1.05 : 1.0;
+      const blurBottom = document.getElementById('chkBlurBottomSub').checked;
+      const cleanVocal = document.getElementById('chkCleanVocal').checked;
+      const speed = parseFloat(document.getElementById('editorSpeed').value) || 1.0;
+
+      const btn = document.getElementById('btnRenderFinal');
+      const progBox = document.getElementById('renderProgressBox');
+      const progMsg = document.getElementById('renderProgressMsg');
+      const progPct = document.getElementById('renderProgressPct');
+      const progBar = document.getElementById('renderProgressBar');
+
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      progBox.classList.remove('hidden');
+      progMsg.innerText = 'Đang khởi động FFmpeg Render Studio...';
+      progPct.innerText = '5%';
+      progBar.style.width = '5%';
+
+      try {
+        const res = await fetch('/api/video/edit', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            filepath: currentPreviewRelPath,
+            start_time: start,
+            end_time: end,
+            aspect_ratio: aspect,
+            blur_background: true,
+            blur_bottom_sub: blurBottom,
+            flip_horizontal: flip,
+            zoom_percent: zoom,
+            speed: speed,
+            burn_subtitles: true,
+            use_dubbed_audio: true,
+            clean_bgm: cleanVocal
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Lỗi khởi chạy tiến trình render');
+
+        const taskId = data.task_id;
+        const pollInterval = setInterval(async () => {
+          try {
+            const sRes = await fetch(`/api/video/edit/tasks/${taskId}`);
+            const sData = await sRes.json();
+
+            if (sData.status === 'processing' || sData.status === 'pending') {
+              progMsg.innerText = sData.message || 'Đang xử lý...';
+              progPct.innerText = `${sData.progress || 10}%`;
+              progBar.style.width = `${sData.progress || 10}%`;
+            } else if (sData.status === 'completed') {
+              clearInterval(pollInterval);
+              progMsg.innerText = '✓ Đã xuất video hoàn chỉnh thành công!';
+              progPct.innerText = '100%';
+              progBar.style.width = '100%';
+              btn.disabled = false;
+              btn.classList.remove('opacity-50', 'cursor-not-allowed');
+              showToast('Xuất video .final.mp4 thành công!');
+              
+              if (sData.output_video_url) {
+                const player = document.getElementById('previewVideoPlayer');
+                player.src = `${sData.output_video_url}?t=${Date.now()}`;
+                player.play().catch(() => {});
+              }
+              await loadHistory();
+            } else if (sData.status === 'error') {
+              clearInterval(pollInterval);
+              progMsg.innerText = `Lỗi: ${sData.error || sData.message}`;
+              progBar.style.width = '0%';
+              btn.disabled = false;
+              btn.classList.remove('opacity-50', 'cursor-not-allowed');
+              showToast(`Lỗi render: ${sData.error || sData.message}`, true);
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }, 1000);
+
+      } catch (e) {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        progMsg.innerText = `Lỗi: ${e.message}`;
+        showToast(`Thất bại: ${e.message}`, true);
+      }
+    }
+
+    // ----------------------------------------------------
+    // BATCH RUN PIPELINE FUNCTIONS
+    // ----------------------------------------------------
+    let activeBatchId = null;
+    let batchPollInterval = null;
+
+    function openBatchModal() {
+      const checkedBoxes = document.querySelectorAll('.history-checkbox:checked');
+      if (checkedBoxes.length === 0) {
+        showToast('Vui lòng chọn ít nhất 1 video để xử lý hàng loạt', true);
+        return;
+      }
+      const modal = document.getElementById('batchModal');
+      document.getElementById('batchModalSubtitle').innerText = `Đã chọn ${checkedBoxes.length} video trong danh sách`;
+      document.getElementById('batchProgressContainer').classList.add('hidden');
+      document.getElementById('batchLogBox').innerHTML = '';
+      document.getElementById('btnStartBatch').disabled = false;
+      modal.classList.remove('hidden');
+    }
+
+    function closeBatchModal() {
+      const modal = document.getElementById('batchModal');
+      modal.classList.add('hidden');
+    }
+
+    async function startBatchRun() {
+      const checkedBoxes = document.querySelectorAll('.history-checkbox:checked');
+      if (checkedBoxes.length === 0) return;
+
+      const filepaths = Array.from(checkedBoxes).map(cb => decodeURIComponent(cb.getAttribute('data-rel-path')));
+      const voice = document.getElementById('batchVoiceSelect').value;
+      const aspect = document.getElementById('batchAspectSelect').value;
+      const blurSub = document.getElementById('batchChkBlurSub').checked;
+      const cleanVocal = document.getElementById('batchChkCleanVocal').checked;
+      const flip = document.getElementById('batchChkFlip').checked;
+      const burnSub = document.getElementById('batchChkSub').checked;
+
+      const btn = document.getElementById('btnStartBatch');
+      btn.disabled = true;
+
+      const progContainer = document.getElementById('batchProgressContainer');
+      const statusText = document.getElementById('batchStatusText');
+      const pctText = document.getElementById('batchPercentText');
+      const progBar = document.getElementById('batchProgressBar');
+      const logBox = document.getElementById('batchLogBox');
+
+      progContainer.classList.remove('hidden');
+      statusText.innerText = 'Đang khởi chạy phiên xử lý hàng loạt...';
+      pctText.innerText = '0%';
+      progBar.style.width = '0%';
+      logBox.innerHTML = '<div>Khởi tạo hàng đợi Batch Runner...</div>';
+
+      try {
+        const res = await fetch('/api/batch/run', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            filepaths: filepaths,
+            voice: voice,
+            aspect_ratio: aspect,
+            blur_background: true,
+            blur_bottom_sub: blurSub,
+            flip_horizontal: flip,
+            zoom_percent: 1.05,
+            speed: 1.05,
+            clean_bgm: cleanVocal,
+            burn_subtitles: burnSub
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Lỗi khởi động batch runner');
+
+        activeBatchId = data.batch_id;
+        if (batchPollInterval) clearInterval(batchPollInterval);
+
+        batchPollInterval = setInterval(async () => {
+          try {
+            const bRes = await fetch(`/api/batch/status/${activeBatchId}`);
+            const bData = await bRes.json();
+
+            statusText.innerText = `[${bData.current_index}/${bData.total}] ${bData.current_title || 'Đang xử lý...'}`;
+            pctText.innerText = `${bData.progress}%`;
+            progBar.style.width = `${bData.progress}%`;
+
+            if (bData.logs && bData.logs.length > 0) {
+              logBox.innerHTML = bData.logs.map(l => `<div class="truncate">${l}</div>`).join('');
+              logBox.scrollTop = logBox.scrollHeight;
+            }
+
+            if (bData.status === 'completed') {
+              clearInterval(batchPollInterval);
+              statusText.innerText = '✓ Đã hoàn thành toàn bộ danh sách!';
+              pctText.innerText = '100%';
+              progBar.style.width = '100%';
+              btn.disabled = false;
+              showToast('Xử lý hàng loạt hoàn tất xuất sắc!');
+              await loadHistory();
+            } else if (bData.status === 'error') {
+              clearInterval(batchPollInterval);
+              statusText.innerText = `Lỗi hàng loạt: ${bData.error}`;
+              btn.disabled = false;
+              showToast(`Lỗi hàng loạt: ${bData.error}`, true);
+            }
+          } catch (pe) {
+            console.error(pe);
+          }
+        }, 1200);
+
+      } catch (err) {
+        btn.disabled = false;
+        statusText.innerText = `Lỗi: ${err.message}`;
+        showToast(`Thất bại: ${err.message}`, true);
+      }
     }
 
 
@@ -3240,30 +3907,37 @@
       const tab2 = document.getElementById('stepTab2');
       const tab3 = document.getElementById('stepTab3');
       const tab4 = document.getElementById('stepTab4');
+      const tab5 = document.getElementById('stepTab5');
 
       const c1 = document.getElementById('stepContent1');
       const c2 = document.getElementById('stepContent2');
       const c3 = document.getElementById('stepContent3');
       const c4 = document.getElementById('stepContent4');
+      const c5 = document.getElementById('stepContent5');
 
-      const activeClass = 'px-3 py-1.5 rounded-lg font-medium transition bg-purple-600 text-white flex items-center gap-1.5 shadow';
+      const activeClass    = 'px-3 py-1.5 rounded-lg font-medium transition bg-purple-600 text-white flex items-center gap-1.5 shadow';
       const activeDubClass = 'px-3 py-1.5 rounded-lg font-medium transition bg-rose-600 text-white flex items-center gap-1.5 shadow';
-      const inactiveClass = 'px-3 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white flex items-center gap-1.5';
+      const activeEditClass= 'px-3 py-1.5 rounded-lg font-medium transition bg-teal-600 text-white flex items-center gap-1.5 shadow';
+      const inactiveClass  = 'px-3 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white flex items-center gap-1.5';
 
-      if (tab1) tab1.className = step === 1 ? activeClass : inactiveClass;
-      if (tab2) tab2.className = step === 2 ? activeClass : inactiveClass;
-      if (tab3) tab3.className = step === 3 ? activeClass : inactiveClass;
+      if (tab1) tab1.className = step === 1 ? activeClass    : inactiveClass;
+      if (tab2) tab2.className = step === 2 ? activeClass    : inactiveClass;
+      if (tab3) tab3.className = step === 3 ? activeClass    : inactiveClass;
       if (tab4) tab4.className = step === 4 ? activeDubClass : inactiveClass;
+      if (tab5) tab5.className = step === 5 ? activeEditClass: inactiveClass;
 
       if (c1) c1.classList.toggle('hidden', step !== 1);
       if (c2) c2.classList.toggle('hidden', step !== 2);
       if (c3) c3.classList.toggle('hidden', step !== 3);
       if (c4) c4.classList.toggle('hidden', step !== 4);
+      if (c5) c5.classList.toggle('hidden', step !== 5);
 
       if (step === 3) {
         renderDialogueList();
       } else if (step === 4) {
         initDubbingStep();
+      } else if (step === 5) {
+        initCropEditor();
       }
 
       lucide.createIcons();
@@ -4375,7 +5049,7 @@
     }
 
     function openDubFolder() {
-      openFolder();
+      openDownloadFolder();
     }
 
     // ----------------------------------------------------
@@ -4920,15 +5594,408 @@
       window.location.href = `/api/subtitles/download/${encodeURIComponent(currentSubExportVideoRel)}`;
     }
 
-    function openDubFolder() {
-      openFolder();
+    // ================================================================
+    // TAB 5 — CROP & TRIM VIDEO EDITOR
+    // ================================================================
+
+    let cropTrimOutputRel = null;
+    let cropTrimTaskId = null;
+    let cropTrimPollTimer = null;
+
+    // Crop state
+    let cropState = {
+      active: false,          // crop toggle on/off
+      dragging: false,
+      startX: 0, startY: 0,  // canvas coords (0-1 normalized)
+      endX: 1, endY: 1,
+      committed: false        // has user drawn a selection?
+    };
+
+    // Trim state
+    let trimState = {
+      active: false,
+      videoDuration: 0,
+      start: 0,
+      end: 0,
+      draggingHandle: null    // 'start' | 'end' | null
+    };
+
+    // Canvas image reference
+    let cropCanvasImg = null;
+
+    function initCropEditor() {
+      // Try to capture frame from any visible video player
+      const videoSources = [
+        document.getElementById('dubVideoPlayer'),
+        document.getElementById('subExportPreviewVideo'),
+        document.getElementById('cropTrimPreviewVideo')
+      ];
+      let srcVideo = null;
+      for (const v of videoSources) {
+        if (v && v.src && v.readyState >= 2) { srcVideo = v; break; }
+      }
+
+      const canvas = document.getElementById('cropCanvas');
+      const placeholder = document.getElementById('cropCanvasPlaceholder');
+      const infoEl = document.getElementById('cropCanvasInfo');
+      if (!canvas) return;
+
+      if (!srcVideo) {
+        // Try to build a temp video from currentTranscriptRelPath
+        if (currentTranscriptRelPath) {
+          const tmp = document.createElement('video');
+          tmp.src = `/api/history/stream/${encodeURIComponent(currentTranscriptRelPath)}`;
+          tmp.crossOrigin = 'anonymous';
+          tmp.muted = true;
+          tmp.currentTime = 1.0;
+          tmp.addEventListener('seeked', () => {
+            _drawFrameToCanvas(canvas, tmp, placeholder, infoEl);
+            trimState.videoDuration = tmp.duration || 0;
+            if (trimState.end === 0) trimState.end = trimState.videoDuration;
+            _updateTrimInputs();
+          }, { once: true });
+          tmp.load();
+        }
+        return;
+      }
+
+      trimState.videoDuration = srcVideo.duration || 0;
+      if (trimState.end === 0) trimState.end = trimState.videoDuration;
+      _updateTrimInputs();
+      _drawFrameToCanvas(canvas, srcVideo, placeholder, infoEl);
+    }
+
+    function _drawFrameToCanvas(canvas, video, placeholder, infoEl) {
+      try {
+        const W = video.videoWidth || 1280;
+        const H = video.videoHeight || 720;
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, W, H);
+        cropCanvasImg = ctx.getImageData(0, 0, W, H);
+        if (placeholder) placeholder.style.display = 'none';
+        if (infoEl) infoEl.textContent = `${W} × ${H} px`;
+        _drawCropOverlay();
+      } catch (e) {
+        console.warn('cropEditor: cannot capture frame', e);
+      }
+    }
+
+    function _drawCropOverlay() {
+      const canvas = document.getElementById('cropCanvas');
+      if (!canvas || !cropCanvasImg) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+
+      // Redraw base image
+      ctx.putImageData(cropCanvasImg, 0, 0);
+
+      if (!cropState.active || !cropState.committed) return;
+
+      const x1 = Math.round(Math.min(cropState.startX, cropState.endX) * W);
+      const y1 = Math.round(Math.min(cropState.startY, cropState.endY) * H);
+      const x2 = Math.round(Math.max(cropState.startX, cropState.endX) * W);
+      const y2 = Math.round(Math.max(cropState.startY, cropState.endY) * H);
+      const rw = x2 - x1, rh = y2 - y1;
+
+      // Dim outside
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, W, y1);
+      ctx.fillRect(0, y2, W, H - y2);
+      ctx.fillRect(0, y1, x1, rh);
+      ctx.fillRect(x2, y1, W - x2, rh);
+
+      // Selection border
+      ctx.strokeStyle = '#14b8a6';
+      ctx.lineWidth = Math.max(2, W / 400);
+      ctx.setLineDash([]);
+      ctx.strokeRect(x1, y1, rw, rh);
+
+      // Corner handles
+      const hs = Math.max(8, W / 80);
+      ctx.fillStyle = '#14b8a6';
+      [[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(([cx,cy]) => {
+        ctx.fillRect(cx - hs/2, cy - hs/2, hs, hs);
+      });
+
+      // Size label
+      const lblText = `${rw} × ${rh}`;
+      ctx.font = `bold ${Math.max(12, W/60)}px monospace`;
+      ctx.fillStyle = '#14b8a6';
+      ctx.fillText(lblText, x1 + 4, Math.max(y1 - 6, 14));
+
+      // Update display
+      const xyEl = document.getElementById('cropXYDisplay');
+      const whEl = document.getElementById('cropWHDisplay');
+      if (xyEl) xyEl.textContent = `${x1}, ${y1}`;
+      if (whEl) whEl.textContent = `${rw} × ${rh}`;
+    }
+
+    function _canvasEventCoords(e, canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        nx: Math.max(0, Math.min(1, (clientX - rect.left) * scaleX / canvas.width)),
+        ny: Math.max(0, Math.min(1, (clientY - rect.top) * scaleY / canvas.height))
+      };
+    }
+
+    function onCropMouseDown(e) {
+      if (!cropState.active) return;
+      e.preventDefault();
+      const canvas = document.getElementById('cropCanvas');
+      const {nx, ny} = _canvasEventCoords(e, canvas);
+      cropState.dragging = true;
+      cropState.committed = true;
+      cropState.startX = nx; cropState.startY = ny;
+      cropState.endX = nx;   cropState.endY = ny;
+      _drawCropOverlay();
+    }
+
+    function onCropMouseMove(e) {
+      if (!cropState.dragging) return;
+      e.preventDefault();
+      const canvas = document.getElementById('cropCanvas');
+      const {nx, ny} = _canvasEventCoords(e, canvas);
+      cropState.endX = nx; cropState.endY = ny;
+      _drawCropOverlay();
+    }
+
+    function onCropMouseUp(e) {
+      cropState.dragging = false;
+      _drawCropOverlay();
+    }
+
+    function onCropTouchStart(e) { onCropMouseDown(e); }
+    function onCropTouchMove(e)  { onCropMouseMove(e); e.preventDefault(); }
+
+    function onCropToggle() {
+      const chk = document.getElementById('cropToggle');
+      cropState.active = chk.checked;
+      const ctrl = document.getElementById('cropControls');
+      if (ctrl) ctrl.classList.toggle('hidden', !cropState.active);
+      const canvas = document.getElementById('cropCanvas');
+      if (canvas) canvas.style.cursor = cropState.active ? 'crosshair' : 'default';
+      if (!cropState.active) {
+        cropState.committed = false;
+        _drawCropOverlay();
+      }
+    }
+
+    function resetCropSelection() {
+      cropState.committed = false;
+      const canvas = document.getElementById('cropCanvas');
+      if (canvas && cropCanvasImg) {
+        const ctx = canvas.getContext('2d');
+        ctx.putImageData(cropCanvasImg, 0, 0);
+      }
+      const xyEl = document.getElementById('cropXYDisplay');
+      const whEl = document.getElementById('cropWHDisplay');
+      if (xyEl) xyEl.textContent = '0, 0';
+      if (whEl) whEl.textContent = '—';
+    }
+
+    // ---------- Trim Timeline ----------
+
+    function onTrimToggle() {
+      const chk = document.getElementById('trimToggle');
+      trimState.active = chk.checked;
+      const ctrl = document.getElementById('trimControls');
+      if (ctrl) ctrl.classList.toggle('hidden', !trimState.active);
+    }
+
+    function _updateTrimInputs() {
+      const sIn = document.getElementById('trimStartInput');
+      const eIn = document.getElementById('trimEndInput');
+      if (sIn) sIn.value = trimState.start.toFixed(1);
+      if (eIn) eIn.value = (trimState.end || trimState.videoDuration).toFixed(1);
+      _updateTrimHandles();
+      _updateTrimDurationLabel();
+    }
+
+    function _updateTrimHandles() {
+      const dur = trimState.videoDuration || 1;
+      const startPct = (trimState.start / dur) * 100;
+      const endPct   = (trimState.end / dur) * 100;
+      const hs = document.getElementById('trimHandleStart');
+      const he = document.getElementById('trimHandleEnd');
+      const hl = document.getElementById('trimRangeHighlight');
+      if (hs) hs.style.left = startPct + '%';
+      if (he) he.style.left = endPct + '%';
+      if (hl) { hl.style.left = startPct + '%'; hl.style.width = (endPct - startPct) + '%'; }
+    }
+
+    function _updateTrimDurationLabel() {
+      const el = document.getElementById('trimDurationLabel');
+      if (!el) return;
+      const dur = (trimState.end || trimState.videoDuration) - trimState.start;
+      const mins = Math.floor(dur / 60);
+      const secs = (dur % 60).toFixed(1);
+      el.innerHTML = `Thời lượng giữ lại: <span class="text-indigo-300 font-mono font-semibold">${mins > 0 ? mins + 'm ' : ''}${secs}s</span>`;
+    }
+
+    function onTrimInputChange() {
+      const sIn = document.getElementById('trimStartInput');
+      const eIn = document.getElementById('trimEndInput');
+      const dur = trimState.videoDuration || 9999;
+      trimState.start = Math.max(0, Math.min(parseFloat(sIn?.value || 0), dur - 0.5));
+      trimState.end   = Math.max(trimState.start + 0.5, Math.min(parseFloat(eIn?.value || dur), dur));
+      _updateTrimHandles();
+      _updateTrimDurationLabel();
+    }
+
+    // Trim handle drag (mouse)
+    (() => {
+      let draggingHandle = null;
+      function getTrackRect() {
+        return document.getElementById('trimTimelineTrack')?.getBoundingClientRect();
+      }
+      function getPct(clientX, rect) {
+        return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      }
+      document.addEventListener('mousedown', (e) => {
+        const hs = document.getElementById('trimHandleStart');
+        const he = document.getElementById('trimHandleEnd');
+        if (hs && hs.contains(e.target)) draggingHandle = 'start';
+        else if (he && he.contains(e.target)) draggingHandle = 'end';
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!draggingHandle) return;
+        const rect = getTrackRect(); if (!rect) return;
+        const pct = getPct(e.clientX, rect);
+        const t = pct * (trimState.videoDuration || 100);
+        if (draggingHandle === 'start') trimState.start = Math.min(t, trimState.end - 0.5);
+        else trimState.end = Math.max(t, trimState.start + 0.5);
+        trimState.start = Math.max(0, trimState.start);
+        trimState.end   = Math.min(trimState.videoDuration || 9999, trimState.end);
+        _updateTrimInputs();
+      });
+      document.addEventListener('mouseup', () => { draggingHandle = null; });
+    })();
+
+    // ---------- Process & Poll ----------
+
+    async function startCropTrimProcess() {
+      const hasCrop = cropState.active && cropState.committed;
+      const hasTrim = trimState.active;
+      if (!hasCrop && !hasTrim) {
+        showToast('Hãy bật ít nhất Crop hoặc Trim và thiết lập thông số', true);
+        return;
+      }
+      if (!currentTranscriptRelPath) {
+        showToast('Không xác định được video nguồn', true);
+        return;
+      }
+
+      // Build crop payload in video pixel coords
+      let cropPayload = null;
+      if (hasCrop && cropCanvasImg) {
+        const canvas = document.getElementById('cropCanvas');
+        const W = canvas.width, H = canvas.height;
+        const x1 = Math.round(Math.min(cropState.startX, cropState.endX) * W);
+        const y1 = Math.round(Math.min(cropState.startY, cropState.endY) * H);
+        const x2 = Math.round(Math.max(cropState.startX, cropState.endX) * W);
+        const y2 = Math.round(Math.max(cropState.startY, cropState.endY) * H);
+        const cw = x2 - x1, ch = y2 - y1;
+        if (cw < 4 || ch < 4) {
+          showToast('Vùng crop quá nhỏ, hãy kéo thả lại', true);
+          return;
+        }
+        cropPayload = { x: x1, y: y1, w: cw, h: ch };
+      }
+
+      let trimPayload = null;
+      if (hasTrim) {
+        trimPayload = { start: trimState.start, end: trimState.end || trimState.videoDuration };
+      }
+
+      const lossless = document.getElementById('losslessTrimCheck')?.checked ?? true;
+
+      // UI — show progress
+      const btn = document.getElementById('btnStartCropTrim');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Đang xử lý...</span>'; lucide.createIcons(); }
+      document.getElementById('cropTrimProgressBox')?.classList.remove('hidden');
+      document.getElementById('cropTrimResultCard')?.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/video/crop-trim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filepath: currentTranscriptRelPath,
+            crop: cropPayload,
+            trim: trimPayload,
+            lossless_trim: lossless
+          })
+        });
+        const d = await res.json();
+        if (!res.ok) { showToast(d.detail || 'Lỗi khi bắt đầu xử lý', true); _resetCropTrimBtn(); return; }
+        cropTrimTaskId = d.task_id;
+        pollCropTrimProgress(cropTrimTaskId);
+      } catch (e) {
+        showToast('Lỗi kết nối server', true);
+        _resetCropTrimBtn();
+      }
+    }
+
+    function pollCropTrimProgress(taskId) {
+      if (cropTrimPollTimer) clearInterval(cropTrimPollTimer);
+      cropTrimPollTimer = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/video/crop-trim/tasks/${taskId}`);
+          if (!res.ok) return;
+          const d = await res.json();
+
+          const pct = d.percent || 0;
+          const bar = document.getElementById('cropTrimProgressBar');
+          const txt = document.getElementById('cropTrimProgressText');
+          const pctEl = document.getElementById('cropTrimProgressPct');
+          if (bar) bar.style.width = pct + '%';
+          if (pctEl) pctEl.textContent = pct + '%';
+          if (txt) txt.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>${d.progress_text || 'Đang xử lý...'}</span>`;
+          lucide.createIcons();
+
+          if (d.status === 'completed') {
+            clearInterval(cropTrimPollTimer);
+            cropTrimOutputRel = d.output_video_rel;
+            _onCropTrimComplete(d);
+          } else if (d.status === 'error') {
+            clearInterval(cropTrimPollTimer);
+            showToast('Lỗi xử lý: ' + (d.error || 'không rõ nguyên nhân'), true);
+            _resetCropTrimBtn();
+          }
+        } catch (e) { /* retry next tick */ }
+      }, 1000);
+    }
+
+    function _onCropTrimComplete(d) {
+      _resetCropTrimBtn();
+      document.getElementById('cropTrimProgressBox')?.classList.add('hidden');
+      const card = document.getElementById('cropTrimResultCard');
+      const prevVid = document.getElementById('cropTrimPreviewVideo');
+      if (card) card.classList.remove('hidden');
+      if (prevVid && d.output_video_url) prevVid.src = d.output_video_url;
+      showToast('Xử lý video hoàn tất! Xem preview bên dưới.');
+    }
+
+    function _resetCropTrimBtn() {
+      const btn = document.getElementById('btnStartCropTrim');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="scissors" class="w-4 h-4"></i><span>Bắt đầu xử lý video</span>';
+        lucide.createIcons();
+      }
     }
 
     // Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
       const modal = document.getElementById('previewModal');
       const delModal = document.getElementById('deleteModal');
-      const apiKeyModal = document.getElementById('apiKeyModal');
+      const apiKeyModal = document.getElementById('aiSettingsModal');
       const transcriptModal = document.getElementById('transcriptModal');
 
       const repModal = document.getElementById('replaceConfirmModal');
@@ -4942,8 +6009,8 @@
         return;
       }
 
-      if (!apiKeyModal.classList.contains('hidden')) {
-        if (e.code === 'Escape') closeApiKeyModal();
+      if (apiKeyModal && !apiKeyModal.classList.contains('hidden')) {
+        if (e.code === 'Escape') closeAiSettingsModal();
         return;
       }
 

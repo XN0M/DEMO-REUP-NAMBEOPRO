@@ -139,7 +139,28 @@ class DouyinTranscriber:
 
         detected_lang = getattr(info, "language", language) or "auto"
         task_data["detected_language"] = detected_lang
+
+        # Xác định loại ngôn ngữ để gán đúng field
+        # - CJK (Trung/Nhật/Hàn): gán vào "chinese" (field gốc của app)
+        # - Tiếng Việt: gán vào "vietnamese"
+        # - Các ngôn ngữ khác (Anh, Tây, ...): giữ trong "text", để "chinese" là bản gốc
+        CJK_LANGS = {"zh", "ja", "ko", "yue"}  # yue = tiếng Quảng
         is_vietnamese = (detected_lang == "vi")
+        is_cjk = detected_lang in CJK_LANGS
+        # orig_field: field nào chứa văn bản gốc để dịch sang tiếng Việt
+        orig_field = "vietnamese" if is_vietnamese else "chinese"
+
+        def _lang_label(code: str) -> str:
+            labels = {
+                "zh": "Tiếng Trung", "yue": "Tiếng Quảng",
+                "ja": "Tiếng Nhật",  "ko": "Tiếng Hàn",
+                "en": "Tiếng Anh",   "vi": "Tiếng Việt",
+                "es": "Tiếng Tây Ban Nha", "fr": "Tiếng Pháp",
+                "de": "Tiếng Đức",   "th": "Tiếng Thái",
+                "ru": "Tiếng Nga",   "ar": "Tiếng Ả Rập",
+                "pt": "Tiếng Bồ Đào Nha", "id": "Tiếng Indonesia",
+            }
+            return labels.get(code, code.upper())
 
         total_duration = info.duration if info.duration and info.duration > 0 else 1.0
         segments = []
@@ -148,15 +169,32 @@ class DouyinTranscriber:
             cur_sec = seg.end
             pct = min(95.0, 30.0 + (cur_sec / total_duration) * 65.0)
             task_data["percent"] = round(pct, 1)
-            task_data["progress_text"] = f"Đã nhận diện đến giây {int(cur_sec)}/{int(total_duration)}s ({len(segments) + 1} câu thoại)..."
+            task_data["progress_text"] = (
+                f"Đã nhận diện đến giây {int(cur_sec)}/{int(total_duration)}s "
+                f"({len(segments) + 1} câu thoại) — {_lang_label(detected_lang)}..."
+            )
+
+            raw_text = seg.text.strip()
+
+            # Gán field đúng theo ngôn ngữ:
+            # - "chinese" = bản gốc CJK hoặc ngôn ngữ không phải Việt
+            # - "vietnamese" = bản gốc nếu video tiếng Việt, hoặc để trống chờ dịch
+            if is_vietnamese:
+                chinese_val = ""
+                vietnamese_val = raw_text
+            else:
+                # CJK và các ngôn ngữ khác đều lưu vào "chinese" (field nguồn để dịch)
+                chinese_val = raw_text
+                vietnamese_val = ""
 
             seg_item = {
                 "id": len(segments) + 1,
                 "start": round(seg.start, 2),
                 "end": round(seg.end, 2),
-                "text": seg.text.strip(),
-                "chinese": "" if is_vietnamese else seg.text.strip(),
-                "vietnamese": seg.text.strip() if is_vietnamese else ""
+                "text": raw_text,          # luôn giữ bản gốc thô
+                "chinese": chinese_val,    # bản gốc (CJK/EN/...) để dịch
+                "vietnamese": vietnamese_val,
+                "orig_lang": detected_lang  # mã ngôn ngữ để UI/AI xử lý đúng
             }
             segments.append(seg_item)
             task_data["segments"] = segments
@@ -166,7 +204,10 @@ class DouyinTranscriber:
         task_data["segments"] = segments
         task_data["status"] = "completed"
         task_data["percent"] = 100.0
-        task_data["progress_text"] = f"Hoàn tất! Đã trích xuất {len(segments)} câu thoại (Ngôn ngữ: {detected_lang.upper()})."
+        task_data["progress_text"] = (
+            f"Hoàn tất! Đã trích xuất {len(segments)} câu thoại "
+            f"({_lang_label(detected_lang)} — {detected_lang.upper()})."
+        )
 
         # Save to disk
         base_name = os.path.splitext(video_path)[0]
@@ -185,7 +226,8 @@ class DouyinTranscriber:
                     "character_map": None
                 }, f, ensure_ascii=False, indent=2)
 
-            srt_content = self.generate_srt(segments, "vietnamese" if is_vietnamese else "chinese")
+            # SRT gốc: dùng field chứa văn bản nguồn
+            srt_content = self.generate_srt(segments, orig_field)
             with open(srt_save_path, "w", encoding="utf-8") as f:
                 f.write(srt_content)
 

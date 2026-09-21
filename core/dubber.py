@@ -10,6 +10,7 @@ import subprocess
 from typing import List, Dict, Optional, Tuple, Callable
 import httpx
 import imageio_ffmpeg
+from core.vocal_remover import VocalRemover
 
 try:
     import audioop
@@ -276,6 +277,7 @@ class DouyinDubber:
         character_voices: Optional[Dict[str, str]] = None,
         bg_volume: float = 0.15,
         voice_volume: float = 1.2,
+        clean_bgm: bool = False,
         openai_api_key: str = "",
         openai_base_url: str = "",
         task_id: str = ""
@@ -444,26 +446,59 @@ class DouyinDubber:
             dubbed_video_path = f"{base_name}.dubbed.mp4"
             has_orig_audio = self.check_video_has_audio(video_path)
 
+            bg_audio_file = video_path
+            if clean_bgm and has_orig_audio:
+                try:
+                    self.tasks[task_id]["message"] = "Đang tách sạch giọng nói gốc để giữ nhạc nền..."
+                    clean_inst_path = os.path.join(temp_dir, "clean_bgm.mp3")
+                    v_remover = VocalRemover()
+                    bg_audio_file = v_remover.remove_vocals(video_path, clean_inst_path)
+                except Exception as ve:
+                    print(f"Lỗi tách giọng, dùng audio gốc: {ve}")
+                    bg_audio_file = video_path
+
             if has_orig_audio and bg_volume > 0.001:
-                # Duck original background audio and overlay dubbed voice
-                filter_complex = (
-                    f"[0:a]volume={bg_volume:.2f}[bg];"
-                    f"[1:a]volume={voice_volume:.2f}[fg];"
-                    f"[bg][fg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
-                )
-                cmd_mux = [
-                    ffmpeg_exe, "-y",
-                    "-i", video_path,
-                    "-i", dubbed_mp3_path,
-                    "-filter_complex", filter_complex,
-                    "-map", "0:v",
-                    "-map", "[aout]",
-                    "-c:v", "copy",
-                    "-c:a", "aac",
-                    "-b:a", "192k",
-                    "-movflags", "+faststart",
-                    dubbed_video_path
-                ]
+                # Duck background audio (clean or original) and overlay dubbed voice
+                if bg_audio_file != video_path:
+                    # Input 0: video, Input 1: dubbed voice, Input 2: clean bgm
+                    filter_complex = (
+                        f"[2:a]volume={bg_volume:.2f}[bg];"
+                        f"[1:a]volume={voice_volume:.2f}[fg];"
+                        f"[bg][fg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                    )
+                    cmd_mux = [
+                        ffmpeg_exe, "-y",
+                        "-i", video_path,
+                        "-i", dubbed_mp3_path,
+                        "-i", bg_audio_file,
+                        "-filter_complex", filter_complex,
+                        "-map", "0:v",
+                        "-map", "[aout]",
+                        "-c:v", "copy",
+                        "-c:a", "aac",
+                        "-b:a", "192k",
+                        "-movflags", "+faststart",
+                        dubbed_video_path
+                    ]
+                else:
+                    filter_complex = (
+                        f"[0:a]volume={bg_volume:.2f}[bg];"
+                        f"[1:a]volume={voice_volume:.2f}[fg];"
+                        f"[bg][fg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                    )
+                    cmd_mux = [
+                        ffmpeg_exe, "-y",
+                        "-i", video_path,
+                        "-i", dubbed_mp3_path,
+                        "-filter_complex", filter_complex,
+                        "-map", "0:v",
+                        "-map", "[aout]",
+                        "-c:v", "copy",
+                        "-c:a", "aac",
+                        "-b:a", "192k",
+                        "-movflags", "+faststart",
+                        dubbed_video_path
+                    ]
             else:
                 # Silenced original audio / voice-only track
                 filter_complex = f"[1:a]volume={voice_volume:.2f}[aout]"

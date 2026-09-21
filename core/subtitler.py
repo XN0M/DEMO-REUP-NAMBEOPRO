@@ -316,3 +316,83 @@ class DouyinSubtitler:
                     os.remove(temp_srt_path)
                 except Exception:
                     pass
+
+    @staticmethod
+    def parse_srt_time(time_str: str) -> float:
+        """Chuyen timestamp SRT 00:01:23,456 thanh so giay (float)."""
+        time_str = time_str.strip().replace(',', '.')
+        parts = time_str.split(':')
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        elif len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+        return float(time_str)
+
+    @staticmethod
+    def format_srt_time(seconds: float) -> str:
+        """Chuyen so giay thanh timestamp chuan SRT 00:01:23,456."""
+        if seconds < 0:
+            seconds = 0
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        ms = int(round((seconds - int(seconds)) * 1000))
+        if ms >= 1000:
+            ms = 999
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+    @classmethod
+    def shift_and_filter_subtitles(
+        cls,
+        srt_path: str,
+        start_sec: float = 0.0,
+        end_sec: Optional[float] = None,
+        output_srt_path: Optional[str] = None
+    ) -> str:
+        """
+        Cat va dich chuyen moc thoi gian phu de khi cat video:
+        - Giu lai cac cau thoai co giao voi khoang [start_sec, end_sec].
+        - Tru di start_sec de phu de dong bo chuan xac voi video da cat.
+        """
+        if not os.path.exists(srt_path):
+            raise FileNotFoundError(f"Khong tim thay file phụ đề: {srt_path}")
+
+        if not output_srt_path:
+            base, ext = os.path.splitext(srt_path)
+            output_srt_path = f"{base}.trimmed{ext}"
+
+        with open(srt_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+
+        # Regex match tung block SRT
+        pattern = re.compile(r"(\d+)\r?\n(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})\r?\n(.*?)(?=\r?\n\r?\n|\Z)", re.DOTALL)
+        blocks = list(pattern.finditer(content))
+
+        new_cues = []
+        cue_idx = 1
+        for m in blocks:
+            c_start = cls.parse_srt_time(m.group(2))
+            c_end = cls.parse_srt_time(m.group(3))
+            text = m.group(4).strip()
+
+            # Kiem tra xem cau co giao voi khoang [start_sec, end_sec] khong
+            if end_sec is not None and c_start >= end_sec:
+                continue
+            if c_end <= start_sec:
+                continue
+
+            # Crop thoi gian neu can
+            adj_start = max(0.0, c_start - start_sec)
+            adj_end = max(adj_start + 0.3, (min(c_end, end_sec) if end_sec else c_end) - start_sec)
+
+            start_str = cls.format_srt_time(adj_start)
+            end_str = cls.format_srt_time(adj_end)
+
+            new_cues.append(f"{cue_idx}\n{start_str} --> {end_str}\n{text}")
+            cue_idx += 1
+
+        with open(output_srt_path, "w", encoding="utf-8") as f:
+            f.write("\n\n".join(new_cues) + "\n")
+
+        return output_srt_path
+

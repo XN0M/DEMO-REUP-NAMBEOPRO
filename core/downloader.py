@@ -1,7 +1,9 @@
 import asyncio
+import datetime
 import json
 import os
 import re
+import threading
 import time
 import urllib.request
 from typing import Callable, Dict, Optional
@@ -11,6 +13,27 @@ class DouyinDownloader:
         self.default_download_dir = default_download_dir
         os.makedirs(self.default_download_dir, exist_ok=True)
         self.tasks: Dict[str, Dict] = {}
+        self.counter_lock = threading.Lock()
+
+
+    def _get_next_sequence(self, platform: str) -> int:
+        with self.counter_lock:
+            counter_file = "counters.json"
+            counters = {}
+            if os.path.exists(counter_file):
+                try:
+                    with open(counter_file, "r", encoding="utf-8") as f:
+                        counters = json.load(f)
+                except Exception:
+                    pass
+            count = counters.get(platform, 0) + 1
+            counters[platform] = count
+            try:
+                with open(counter_file, "w", encoding="utf-8") as f:
+                    json.dump(counters, f, indent=2)
+            except Exception as e:
+                print(f"Error saving counter: {e}")
+            return count
 
     def sanitize_filename(self, text: str, max_len: int = 60) -> str:
         """Remove invalid Windows characters and limit length."""
@@ -81,8 +104,13 @@ class DouyinDownloader:
             save_dir = os.path.join(base_dir, clean_col)
         else:
             save_dir = base_dir
-        os.makedirs(save_dir, exist_ok=True)
 
+        platform = video_info.get("platform", "douyin").lower()
+        seq = self._get_next_sequence(platform)
+        date_str = datetime.datetime.now().strftime("%Y%m%d")
+        
+        video_folder_name = f"{platform}_{seq:03d}_{date_str}"
+        save_dir = os.path.join(save_dir, video_folder_name)
         os.makedirs(save_dir, exist_ok=True)
 
         author = self.sanitize_filename(video_info.get("author", "user"), max_len=20)
