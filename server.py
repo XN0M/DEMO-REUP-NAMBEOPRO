@@ -4,6 +4,9 @@ import os
 import sys
 import subprocess
 import shutil
+import threading
+import math
+import re
 import urllib.parse
 from typing import Dict, List, Optional
 
@@ -29,6 +32,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uuid
 
+from core.video_files import is_source, associated_files, collection_for
+from core.video_move import move_video
+from functools import wraps
 from core.downloader import DouyinDownloader
 from core.extractor import DouyinExtractor
 from core.transcriber import DouyinTranscriber
@@ -89,6 +95,41 @@ vocal_remover = VocalRemover()
 edit_tasks: Dict[str, Dict] = {}
 batch_tasks: Dict[str, Dict] = {}
 parsed_cache: Dict[str, Dict] = {}
+active_source_jobs = set()
+source_job_lock = threading.Lock()
+
+def _source_job_key(path: str) -> str:
+    return os.path.normcase(os.path.realpath(path))
+
+def _reserve_source_job(path: str) -> bool:
+    key = _source_job_key(path)
+    with source_job_lock:
+        if key in active_source_jobs:
+            return False
+        active_source_jobs.add(key)
+        return True
+
+def _release_source_job(path: str):
+    with source_job_lock:
+        active_source_jobs.discard(_source_job_key(path))
+
+def _download_in_progress(path):
+    return any(t.get("status") not in ("completed", "failed") and
+               _source_job_key(t.get("file_path", "")) == _source_job_key(path)
+               for t in downloader.tasks.values())
+
+def _locked_history_action(fn):
+    @wraps(fn)
+    async def wrapped(*args, **kwargs):
+        arg = kwargs.get("req", kwargs.get("filepath", args[0] if args else None))
+        path = _resolve_safe_path(arg if isinstance(arg, str) else (arg.filepath or arg.target_rel))
+        if _download_in_progress(path) or not _reserve_source_job(path):
+            raise HTTPException(409, "Video đang được xử lý")
+        try:
+            return await fn(*args, **kwargs)
+        finally:
+            _release_source_job(path)
+    return wrapped
 
 class EditVideoRequest(BaseModel):
     filepath: str
@@ -179,6 +220,9 @@ class AiConfigRequest(BaseModel):
     openai_api_key: Optional[str] = None
     openai_base_url: Optional[str] = None
     openai_model: Optional[str] = None
+    glm_api_key: Optional[str] = None
+    glm_base_url: Optional[str] = None
+    glm_model: Optional[str] = None
     default_ai_provider: Optional[str] = None
     default_ai_model: Optional[str] = None
 
@@ -211,6 +255,7 @@ class DubExecuteRequest(BaseModel):
     character_voices: Optional[Dict[str, str]] = None
     bg_volume: Optional[float] = 0.15
     voice_volume: Optional[float] = 1.2
+    clean_bgm: Optional[bool] = False
     burn_sub: Optional[bool] = False
     sub_type: Optional[str] = "hardsub"
     sub_lang: Optional[str] = "vi"
@@ -244,13 +289,19 @@ async def get_config():
     openai_key = cfg.get("openai_api_key", os.environ.get("OPENAI_API_KEY", ""))
     openai_masked = f"{openai_key[:6]}...{openai_key[-4:]}" if len(openai_key) > 10 else ("***" if openai_key else "")
     openai_base_url = cfg.get("openai_base_url", "")
+    
+    glm_key = cfg.get("glm_api_key", os.environ.get("GLM_API_KEY", ""))
+    glm_masked = f"{glm_key[:6]}...{glm_key[-4:]}" if len(glm_key) > 10 else ("***" if glm_key else "")
 
     default_provider = cfg.get("default_ai_provider", "gemini" if gemini_key else ("openai" if openai_key else "gemini"))
     gemini_model = cfg.get("gemini_model") or "gemini-2.5-flash"
     openai_model = cfg.get("openai_model") or "gpt-4o-mini"
+    glm_model = cfg.get("glm_model") or "glm-5"
 
     if default_provider == "openai":
         default_model = cfg.get("default_ai_model") or openai_model
+    elif default_provider == "glm":
+        default_model = cfg.get("default_ai_model") or glm_model
     else:
         default_model = cfg.get("default_ai_model") or gemini_model
 
@@ -264,6 +315,10 @@ async def get_config():
         "openai_api_key_masked": openai_masked,
         "openai_base_url": openai_base_url,
         "openai_model": openai_model,
+        "has_glm_key": bool(glm_key),
+        "glm_api_key_masked": glm_masked,
+        "glm_base_url": cfg.get("glm_base_url", ""),
+        "glm_model": glm_model,
         "default_ai_provider": default_provider,
         "default_ai_model": default_model
     }
@@ -281,6 +336,12 @@ async def save_ai_config(req: AiConfigRequest):
         cfg["openai_base_url"] = req.openai_base_url.strip()
     if req.openai_model is not None:
         cfg["openai_model"] = req.openai_model.strip()
+    if req.glm_api_key is not None:
+        cfg["glm_api_key"] = req.glm_api_key.strip()
+    if req.glm_base_url is not None:
+        cfg["glm_base_url"] = req.glm_base_url.strip()
+    if req.glm_model is not None:
+        cfg["glm_model"] = req.glm_model.strip()
     if req.default_ai_provider is not None:
         cfg["default_ai_provider"] = req.default_ai_provider.strip()
     if req.default_ai_model is not None:
@@ -293,13 +354,22 @@ async def save_ai_config(req: AiConfigRequest):
 async def test_ai_connection(req: AiTestRequest):
     cfg = load_app_config()
     provider = (req.provider or cfg.get("default_ai_provider", "gemini")).lower().strip()
-    base_url = req.base_url or cfg.get("openai_base_url", "")
+    base_url = req.base_url
 
     if provider in ["openai", "chatgpt"]:
+        if not base_url:
+            base_url = cfg.get("openai_base_url", "")
         api_key = req.api_key or cfg.get("openai_api_key", os.environ.get("OPENAI_API_KEY", ""))
         model = req.model or cfg.get("openai_model") or "gpt-4o-mini"
         if not api_key:
             raise HTTPException(status_code=400, detail="Chưa nhập API Key cho OpenAI/ChatGPT.")
+    elif provider == "glm":
+        if not base_url:
+            base_url = cfg.get("glm_base_url") or "https://open.bigmodel.cn/api/paas/v4/"
+        api_key = req.api_key or cfg.get("glm_api_key", os.environ.get("GLM_API_KEY", ""))
+        model = req.model or cfg.get("glm_model") or "glm-5"
+        if not api_key:
+            raise HTTPException(status_code=400, detail="Chưa nhập API Key cho GLM.")
     else:
         provider = "gemini"
         api_key = req.api_key or cfg.get("gemini_api_key", os.environ.get("GEMINI_API_KEY", ""))
@@ -362,7 +432,8 @@ async def get_collections():
     if os.path.exists(current_download_dir):
         for item in sorted(os.listdir(current_download_dir)):
             item_path = os.path.join(current_download_dir, item)
-            if os.path.isdir(item_path) and not item.startswith("."):
+            if (os.path.isdir(item_path) and not item.startswith(".")
+                    and not re.fullmatch(r"[a-zA-Z]+_\d{3,}_\d{8}(?:_\d+)?", item)):
                 if item not in cols:
                     cols.append(item)
     return {"collections": cols}
@@ -375,7 +446,9 @@ async def create_collection(req: CollectionCreateRequest):
     safe_name = downloader.sanitize_filename(name, max_len=30)
     if not safe_name:
         raise HTTPException(status_code=400, detail="Tên bộ sưu tập không hợp lệ")
-    col_dir = os.path.join(current_download_dir, safe_name)
+    if safe_name.startswith(".") or re.fullmatch(r"[a-zA-Z]+_\d{3,}_\d{8}(?:_\d+)?", safe_name):
+        raise HTTPException(400, "Tên thư mục không hợp lệ")
+    col_dir = _resolve_safe_path(safe_name)
     os.makedirs(col_dir, exist_ok=True)
     return {"status": "success", "collection": safe_name}
 
@@ -462,10 +535,16 @@ async def proxy_media(request: Request, url: str = Query(...)):
 
 
 def _resolve_safe_path(rel_path: str) -> str:
-    decoded = urllib.parse.unquote(rel_path).replace("\\", "/")
-    full_path = os.path.normpath(os.path.join(current_download_dir, decoded))
-    base_abs = os.path.abspath(current_download_dir)
-    if not os.path.abspath(full_path).startswith(base_abs):
+    decoded = urllib.parse.unquote(rel_path or "").replace("\\", "/")
+    parts = decoded.split("/")
+    if os.path.isabs(decoded) or (len(decoded) >= 2 and decoded[1] == ":") or ".." in parts:
+        raise HTTPException(status_code=403, detail="Truy cập bị từ chối")
+    base_real = os.path.realpath(current_download_dir)
+    full_path = os.path.realpath(os.path.join(base_real, decoded))
+    try:
+        if os.path.commonpath([base_real, full_path]) != base_real:
+            raise HTTPException(status_code=403, detail="Truy cập bị từ chối")
+    except ValueError:
         raise HTTPException(status_code=403, detail="Truy cập bị từ chối")
     return full_path
 
@@ -511,30 +590,32 @@ async def get_history():
     from datetime import datetime
     
     try:
-        derivative_suffixes = (
-            ".dubbed.mp4",
-            ".hardsub.vi.mp4",
-            ".hardsub.bilingual.mp4",
-            ".dubbed.hardsub.vi.mp4",
-            ".dubbed.hardsub.bilingual.mp4",
-            ".backup.mp4"
-        )
         import re
         for folder, dirs, files in os.walk(current_download_dir):
-            mp4_files = [f for f in files if f.endswith(".mp4") and not any(f.endswith(sfx) for sfx in derivative_suffixes) and not re.search(r'\.f\d+\.mp4$', f)]
+            base_real = os.path.realpath(current_download_dir)
+            safe_dirs = []
+            for directory in dirs:
+                try:
+                    if os.path.commonpath([base_real, os.path.realpath(os.path.join(folder, directory))]) == base_real:
+                        safe_dirs.append(directory)
+                except ValueError:
+                    continue
+            dirs[:] = safe_dirs
+            file_set = set(files)
+            mp4_files = []
+            for candidate in files:
+                if not is_source(candidate, file_set):
+                    continue
+                candidate_real = os.path.realpath(os.path.join(folder, candidate))
+                try:
+                    if os.path.commonpath([base_real, candidate_real]) != base_real:
+                        continue
+                except ValueError:
+                    continue
+                mp4_files.append(candidate)
             for f in mp4_files:
-                rel_to_base = os.path.relpath(folder, current_download_dir)
-                parts = rel_to_base.split(os.sep)
-                folder_basename = os.path.basename(folder)
-                m = re.match(r'^([a-zA-Z]+)_(\d{3,})_(\d{8})$', folder_basename)
-                if m:
-                    plat = m.group(1).capitalize()
-                    seq = m.group(2)
-                    d = m.group(3)
-                    col_name = f"{plat} #{seq} - {d[6:8]}/{d[4:6]}/{d[0:4]}"
-                else:
-                    col_name = parts[0] if parts[0] != '.' else "Chung"
-                
+                col_name = collection_for(os.path.join(folder, f), current_download_dir)
+
                 mp4_path = os.path.join(folder, f)
                 base_name = f[:-4]
                 thumb_name = f"{base_name}.thumb.jpg"
@@ -685,27 +766,7 @@ def _delete_video_and_associated_files(filepath: str) -> List[str]:
     dir_name = os.path.dirname(mp4_path)
     base_name = os.path.basename(mp4_path)[:-4]
 
-    target_files = [
-        mp4_path,
-        os.path.join(dir_name, f"{base_name}.json"),
-        os.path.join(dir_name, f"{base_name}.thumb.jpg"),
-        os.path.join(dir_name, f"{base_name}.transcript.json"),
-        os.path.join(dir_name, f"{base_name}.srt"),
-        os.path.join(dir_name, f"{base_name}.vi.srt"),
-        os.path.join(dir_name, f"{base_name}.bilingual.srt"),
-        os.path.join(dir_name, f"{base_name}.transcript.txt"),
-        os.path.join(dir_name, f"{base_name}.dubbed.mp4"),
-        os.path.join(dir_name, f"{base_name}.dubbed.mp3"),
-        os.path.join(dir_name, f"{base_name}.hardsub.vi.mp4"),
-        os.path.join(dir_name, f"{base_name}.hardsub.bilingual.mp4"),
-        os.path.join(dir_name, f"{base_name}.softsub.vi.mp4"),
-        os.path.join(dir_name, f"{base_name}.softsub.bilingual.mp4"),
-        os.path.join(dir_name, f"{base_name}.dubbed.hardsub.vi.mp4"),
-        os.path.join(dir_name, f"{base_name}.dubbed.hardsub.bilingual.mp4"),
-        os.path.join(dir_name, f"{base_name}.dubbed.softsub.vi.mp4"),
-        os.path.join(dir_name, f"{base_name}.dubbed.softsub.bilingual.mp4"),
-        os.path.join(dir_name, f"{base_name}.backup.mp4")
-    ]
+    target_files = associated_files(mp4_path)
 
     deleted = []
     for p in target_files:
@@ -726,11 +787,57 @@ def _delete_video_and_associated_files(filepath: str) -> List[str]:
     return deleted
 
 @app.delete("/api/history/{filepath:path}")
+@_locked_history_action
 async def delete_history_video(filepath: str):
     deleted = _delete_video_and_associated_files(filepath)
     if not deleted:
         raise HTTPException(status_code=404, detail="Không tìm thấy file để xóa")
     return {"status": "success", "deleted_files": deleted}
+
+class MoveVideosRequest(BaseModel):
+    filepaths: List[str]
+    collection: str
+
+@app.post("/api/history/move")
+async def move_history_videos(req: MoveVideosRequest):
+    if not req.filepaths or not req.collection.strip():
+        raise HTTPException(400, "Chọn video và thư mục đích")
+    # Validate the entire request before moving anything.
+    paths = [(fp, _resolve_safe_path(fp)) for fp in dict.fromkeys(req.filepaths)]
+    destination = _resolve_safe_path(req.collection)
+    if req.collection not in (await get_collections())["collections"]:
+        raise HTTPException(400, "Thư mục đích không tồn tại")
+    if any(not p.lower().endswith('.mp4') for _, p in paths):
+        raise HTTPException(400, "Chỉ hỗ trợ video MP4")
+    result = {"moved": [], "skipped": [], "failed": []}
+    for relative, source in paths:
+        reserved = False
+        try:
+            if not os.path.isfile(source):
+                raise FileNotFoundError("Video không còn tồn tại")
+            if not is_source(os.path.basename(source), os.listdir(os.path.dirname(source))):
+                raise ValueError("Hãy chọn video nguồn")
+            if _download_in_progress(source) or not _reserve_source_job(source):
+                result["failed"].append({"filepath": relative, "error": "Video đang được xử lý", "code": 409})
+                continue
+            reserved = True
+            if collection_for(source, current_download_dir) == req.collection:
+                result["skipped"].append({"filepath": relative, "reason": "Video đã ở thư mục đích"})
+                continue
+            new_path = move_video(source, current_download_dir, destination, _resolve_safe_path)
+            result["moved"].append({"old_filepath": relative, "new_filepath": os.path.relpath(new_path, current_download_dir).replace("\\", "/")})
+            for task in downloader.tasks.values():
+                if task.get("file_path") == source:
+                    task["file_path"] = new_path
+                    for key in ("json_path", "thumb_path"):
+                        if task.get(key):
+                            task[key] = os.path.join(os.path.dirname(new_path), os.path.basename(task[key]))
+        except Exception as error:
+            result["failed"].append({"filepath": relative, "error": str(getattr(error, "detail", error))})
+        finally:
+            if reserved:
+                _release_source_job(source)
+    return result
 
 @app.post("/api/history/delete-batch")
 async def delete_batch_history_videos(req: BatchDeleteRequest):
@@ -738,7 +845,7 @@ async def delete_batch_history_videos(req: BatchDeleteRequest):
     failed = []
     for fp in req.filepaths:
         try:
-            d = _delete_video_and_associated_files(fp)
+            d = (await delete_history_video(fp))["deleted_files"]
             if d:
                 all_deleted.extend(d)
             else:
@@ -767,6 +874,7 @@ async def open_history_file(req: OpenFileRequest):
         raise HTTPException(status_code=500, detail=f"Lỗi mở file: {str(e)}")
 
 @app.post("/api/history/replace-original")
+@_locked_history_action
 async def replace_original_video(req: ReplaceOriginalRequest):
     """Replace original .mp4 video with an edited version, saving a .backup.mp4 first."""
     target = req.filepath or req.target_rel
@@ -810,6 +918,7 @@ async def replace_original_video(req: ReplaceOriginalRequest):
     }
 
 @app.post("/api/history/restore-original")
+@_locked_history_action
 async def restore_original_video(req: RestoreOriginalRequest):
     """Restore original video from .backup.mp4."""
     target = req.filepath or req.target_rel
@@ -861,13 +970,18 @@ async def get_transcribe_models():
     }
 
 async def _bg_transcribe_task(video_path: str, task_id: str, model_size: str, language: str):
-    await transcriber.transcribe_video(video_path, task_id=task_id, model_size=model_size, language=language)
+    try:
+        await transcriber.transcribe_video(video_path, task_id=task_id, model_size=model_size, language=language)
+    finally:
+        _release_source_job(video_path)
 
 @app.post("/api/transcribe")
 async def trigger_transcribe(req: TranscribeRequest, background_tasks: BackgroundTasks):
     full_path = _resolve_safe_path(req.filepath)
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail="File video không tồn tại")
+    if not _reserve_source_job(full_path):
+        raise HTTPException(status_code=409, detail="Video đang được xử lý")
 
     task_id = f"task_{uuid.uuid4().hex[:8]}"
     model_size = req.model_size or "base"
@@ -973,6 +1087,12 @@ async def generate_character_map(req: CharacterMapRequest):
         base_url = cfg.get("openai_base_url", "")
         if not api_key:
             raise HTTPException(status_code=400, detail="Chưa cấu hình ChatGPT/OpenAI API Key. Vui lòng bấm vào nút 'Cài đặt AI' trên thanh tiêu đề.")
+    elif provider == "glm":
+        api_key = cfg.get("glm_api_key", os.environ.get("GLM_API_KEY", ""))
+        model = req.model or cfg.get("glm_model") or (cfg.get("default_ai_model") if cfg.get("default_ai_provider") == "glm" else None) or "glm-5"
+        base_url = cfg.get("glm_base_url") or "https://open.bigmodel.cn/api/paas/v4/"
+        if not api_key:
+            raise HTTPException(status_code=400, detail="Chưa cấu hình GLM/ZhipuAI API Key. Vui lòng bấm vào nút 'Cài đặt AI' trên thanh tiêu đề.")
     else:
         provider = "gemini"
         api_key = cfg.get("gemini_api_key", os.environ.get("GEMINI_API_KEY", ""))
@@ -980,6 +1100,9 @@ async def generate_character_map(req: CharacterMapRequest):
         base_url = None
         if not api_key:
             raise HTTPException(status_code=400, detail="Chưa cấu hình Google Gemini API Key. Vui lòng bấm vào nút 'Cài đặt AI' trên thanh tiêu đề.")
+
+    if not _reserve_source_job(full_path):
+        raise HTTPException(status_code=409, detail="Video đang được xử lý")
 
     try:
         char_map = await translator.generate_character_map(
@@ -998,6 +1121,8 @@ async def generate_character_map(req: CharacterMapRequest):
         return {"status": "success", "character_map": char_map, "provider": provider, "model": model}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _release_source_job(full_path)
 
 @app.post("/api/translate/execute")
 async def execute_translation(req: TranslateRequest):
@@ -1024,6 +1149,12 @@ async def execute_translation(req: TranslateRequest):
         base_url = cfg.get("openai_base_url", "")
         if not api_key:
             raise HTTPException(status_code=400, detail="Chưa cấu hình ChatGPT/OpenAI API Key.")
+    elif provider == "glm":
+        api_key = cfg.get("glm_api_key", os.environ.get("GLM_API_KEY", ""))
+        model = req.model or cfg.get("glm_model") or (cfg.get("default_ai_model") if cfg.get("default_ai_provider") == "glm" else None) or "glm-5"
+        base_url = cfg.get("glm_base_url") or "https://open.bigmodel.cn/api/paas/v4/"
+        if not api_key:
+            raise HTTPException(status_code=400, detail="Chưa cấu hình GLM/ZhipuAI API Key.")
     else:
         provider = "gemini"
         api_key = cfg.get("gemini_api_key", os.environ.get("GEMINI_API_KEY", ""))
@@ -1031,6 +1162,9 @@ async def execute_translation(req: TranslateRequest):
         base_url = None
         if not api_key:
             raise HTTPException(status_code=400, detail="Chưa cấu hình Google Gemini API Key.")
+
+    if not _reserve_source_job(full_path):
+        raise HTTPException(status_code=409, detail="Video đang được xử lý")
 
     try:
         translated_segments = await translator.translate_with_character_map(
@@ -1074,6 +1208,8 @@ async def execute_translation(req: TranslateRequest):
         return {"status": "success", "segments": translated_segments}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _release_source_job(full_path)
 
 @app.post("/api/translate/chunk")
 async def translate_chunk_endpoint(req: TranslateChunkRequest):
@@ -1090,6 +1226,12 @@ async def translate_chunk_endpoint(req: TranslateChunkRequest):
         base_url = cfg.get("openai_base_url", "")
         if not api_key:
             raise HTTPException(status_code=400, detail="Chưa cấu hình ChatGPT/OpenAI API Key.")
+    elif provider == "glm":
+        api_key = cfg.get("glm_api_key", os.environ.get("GLM_API_KEY", ""))
+        model = req.model or cfg.get("glm_model") or (cfg.get("default_ai_model") if cfg.get("default_ai_provider") == "glm" else None) or "glm-5"
+        base_url = cfg.get("glm_base_url") or "https://open.bigmodel.cn/api/paas/v4/"
+        if not api_key:
+            raise HTTPException(status_code=400, detail="Chưa cấu hình GLM/ZhipuAI API Key.")
     else:
         provider = "gemini"
         api_key = cfg.get("gemini_api_key", os.environ.get("GEMINI_API_KEY", ""))
@@ -1205,6 +1347,9 @@ async def execute_dubbing(req: DubExecuteRequest):
     openai_key = cfg.get("openai_api_key", os.environ.get("OPENAI_API_KEY", ""))
     openai_base = cfg.get("openai_base_url", "")
 
+    if not _reserve_source_job(full_path):
+        raise HTTPException(status_code=409, detail="Video đang được xử lý")
+
     task_id = str(uuid.uuid4())
     dubber.tasks[task_id] = {
         "status": "pending",
@@ -1225,6 +1370,7 @@ async def execute_dubbing(req: DubExecuteRequest):
                 character_voices=req.character_voices,
                 bg_volume=req.bg_volume if req.bg_volume is not None else 0.15,
                 voice_volume=req.voice_volume if req.voice_volume is not None else 1.2,
+                clean_bgm=req.clean_bgm or False,
                 openai_api_key=openai_key,
                 openai_base_url=openai_base,
                 task_id=task_id
@@ -1260,7 +1406,10 @@ async def execute_dubbing(req: DubExecuteRequest):
                         dubber.tasks[task_id]["dubbed_sub_video"] = out_dub_sub
                         dubber.tasks[task_id]["message"] = "Hoàn tất lồng tiếng và chèn phụ đề!"
         except Exception as e:
-            print(f"Dubbing error for task {task_id}: {e}")
+            import traceback
+            print(f"Dubbing error for task {task_id}: {e}\n{traceback.format_exc()}")
+        finally:
+            _release_source_job(full_path)
 
     asyncio.create_task(_run())
     return {"status": "success", "task_id": task_id}
@@ -1488,6 +1637,10 @@ def _run_video_edit_job(task_id: str, req_data: dict):
             edit_tasks[task_id]["status"] = "error"
             edit_tasks[task_id]["error"] = str(e)
             edit_tasks[task_id]["message"] = f"Lỗi render: {str(e)}"
+    finally:
+        input_path = req_data.get("input_video")
+        if input_path:
+            _release_source_job(input_path)
 
 @app.post("/api/video/edit")
 async def edit_video_endpoint(req: EditVideoRequest, background_tasks: BackgroundTasks):
@@ -1497,6 +1650,21 @@ async def edit_video_endpoint(req: EditVideoRequest, background_tasks: Backgroun
     full_path = _resolve_safe_path(req.filepath)
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail="Không tìm thấy video nguồn")
+
+    if not math.isfinite(req.speed) or not 0.5 <= req.speed <= 2.0:
+        raise HTTPException(status_code=400, detail="Tốc độ phải nằm trong khoảng 0.5 đến 2.0")
+    if not math.isfinite(req.zoom_percent) or not 1.0 <= req.zoom_percent <= 4.0:
+        raise HTTPException(status_code=400, detail="Zoom phải nằm trong khoảng 1.0 đến 4.0")
+    if req.start_time is not None and (not math.isfinite(req.start_time) or req.start_time < 0):
+        raise HTTPException(status_code=400, detail="Thời điểm bắt đầu không hợp lệ")
+    if req.end_time is not None and (not math.isfinite(req.end_time) or req.end_time <= (req.start_time or 0)):
+        raise HTTPException(status_code=400, detail="Thời điểm kết thúc phải sau thời điểm bắt đầu")
+    if req.start_time is not None or req.end_time is not None:
+        duration = editor.get_video_duration(full_path)
+        if duration <= 0 or (req.start_time is not None and req.start_time >= duration):
+            raise HTTPException(status_code=400, detail="Khoảng thời gian cắt không nằm trong video")
+    if not _reserve_source_job(full_path):
+        raise HTTPException(status_code=409, detail="Video đang được xử lý")
 
     base_name = os.path.splitext(full_path)[0]
     out_video = f"{base_name}.final.mp4"
@@ -1514,7 +1682,11 @@ async def edit_video_endpoint(req: EditVideoRequest, background_tasks: Backgroun
 
     import threading
     t = threading.Thread(target=_run_video_edit_job, args=(task_id, req_dict), daemon=True)
-    t.start()
+    try:
+        t.start()
+    except Exception:
+        _release_source_job(full_path)
+        raise
 
     rel_out = os.path.relpath(out_video, current_download_dir).replace("\\", "/")
     return {
@@ -1539,126 +1711,287 @@ async def get_edit_video_task(task_id: str):
 
 # --- Batch Processing Endpoints ---
 
+def _read_srt_segments(path: str) -> List[Dict]:
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
+        content = f.read()
+    pattern = re.compile(
+        r"\d+\s*\r?\n(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*"
+        r"(\d{2}:\d{2}:\d{2}[,.]\d{3})[^\r\n]*\r?\n(.*?)(?=\r?\n\s*\r?\n|\Z)",
+        re.DOTALL
+    )
+    segments = []
+    for idx, match in enumerate(pattern.finditer(content), 1):
+        text = re.sub(r"<[^>]*>", "", match.group(3)).strip()
+        if not text:
+            continue
+        segments.append({
+            "id": idx,
+            "start": DouyinSubtitler.parse_srt_time(match.group(1).replace(".", ",")),
+            "end": DouyinSubtitler.parse_srt_time(match.group(2).replace(".", ",")),
+            "text": text,
+            "chinese": text,
+            "vietnamese": ""
+        })
+    return segments
+
+
+def _apply_vietnamese_srt(segments: List[Dict], vi_srt_path: str):
+    cues = _read_srt_segments(vi_srt_path)
+    for segment in segments:
+        seg_start = float(segment.get("start", 0))
+        seg_end = float(segment.get("end", seg_start))
+        seg_mid = (seg_start + seg_end) / 2
+        matches = []
+        for cue in cues:
+            overlap = max(0.0, min(seg_end, cue["end"]) - max(seg_start, cue["start"]))
+            if overlap > 0:
+                cue_mid = (cue["start"] + cue["end"]) / 2
+                matches.append((overlap, -abs(seg_mid - cue_mid), cue["text"]))
+        if matches and not str(segment.get("vietnamese", "")).strip():
+            segment["vietnamese"] = max(matches)[2]
+
+
 def _run_batch_pipeline_worker(batch_id: str, req_data: dict):
+    task = batch_tasks.get(batch_id)
+    if task is None:
+        return
+    filepaths = req_data.get("filepaths", [])
+    total = len(filepaths)
+
+    def log_msg(message: str):
+        task["logs"].append(message)
+
+    def fail(filepath: str, stage: str, error: str):
+        task["failed"].append({"filepath": filepath, "stage": stage, "error": str(error)})
+        log_msg(f"  Lỗi {stage}: {error}")
+
     try:
-        filepaths = req_data.get("filepaths", [])
-        total = len(filepaths)
-        batch_tasks[batch_id] = {
-            "status": "processing",
-            "total": total,
-            "current_index": 0,
-            "current_title": "",
-            "progress": 0,
-            "logs": [],
-            "completed": [],
-            "error": None
-        }
+        task["status"] = "processing"
+        cfg = load_app_config()
+        provider = (cfg.get("default_ai_provider") or "gemini").lower()
+        if provider in ("openai", "chatgpt"):
+            provider = "openai"
+            api_key = cfg.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
+            model = cfg.get("openai_model") or "gpt-4o-mini"
+            base_url = cfg.get("openai_base_url") or None
+        elif provider == "glm":
+            provider = "glm"
+            api_key = cfg.get("glm_api_key") or os.environ.get("GLM_API_KEY", "")
+            model = cfg.get("glm_model") or "glm-5"
+            base_url = cfg.get("glm_base_url") or "https://open.bigmodel.cn/api/paas/v4/"
+        else:
+            provider = "gemini"
+            api_key = cfg.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
+            model = cfg.get("gemini_model") or "gemini-2.5-flash"
+            base_url = None
 
-        def log_msg(m: str):
-            if batch_id in batch_tasks:
-                batch_tasks[batch_id]["logs"].append(m)
-
-        for idx, fp in enumerate(filepaths):
-            full_path = _resolve_safe_path(fp)
-            if not os.path.exists(full_path):
-                log_msg(f"Bỏ qua: Không tìm thấy {fp}")
-                continue
-
-            base_name = os.path.splitext(full_path)[0]
-            title = os.path.basename(full_path)
-            batch_tasks[batch_id]["current_index"] = idx + 1
-            batch_tasks[batch_id]["current_title"] = title
-            step_base = int((idx / total) * 100)
-            batch_tasks[batch_id]["progress"] = step_base
-            log_msg(f"[{idx+1}/{total}] Bắt đầu xử lý video: {title}")
-
-            # 1. Bóc phụ đề (Transcribe) nếu chưa có
-            srt_path = f"{base_name}.srt"
-            transcript_json = f"{base_name}.transcript.json"
-            if not os.path.exists(srt_path):
-                log_msg(f"  -> Đang bóc phụ đề giọng nói Whisper...")
-                try:
-                    res_trans = transcriber.transcribe(full_path, model_size="base")
-                    with open(srt_path, "w", encoding="utf-8") as sf:
-                        sf.write(res_trans.get("srt", ""))
-                    with open(transcript_json, "w", encoding="utf-8") as jf:
-                        json.dump(res_trans, jf, ensure_ascii=False, indent=2)
-                except Exception as te:
-                    log_msg(f"  Lỗi bóc phụ đề: {te}")
-
-            # 2. Dịch thuật sang tiếng Việt nếu chưa có
-            vi_srt_path = f"{base_name}.vi.srt"
-            if not os.path.exists(vi_srt_path) and os.path.exists(srt_path):
-                log_msg(f"  -> Đang dịch thuật phụ đề bằng AI...")
-                try:
-                    cfg = load_app_config()
-                    api_key = cfg.get("gemini_api_key") or cfg.get("openai_api_key", "")
-                    provider = cfg.get("default_ai_provider", "gemini")
-                    with open(srt_path, "r", encoding="utf-8") as sf:
-                        orig_srt_content = sf.read()
-                    trans_res = translator.translate_srt_content(
-                        srt_content=orig_srt_content,
-                        provider=provider,
-                        api_key=api_key
-                    )
-                    with open(vi_srt_path, "w", encoding="utf-8") as vf:
-                        vf.write(trans_res.get("translated_srt", ""))
-                except Exception as tre:
-                    log_msg(f"  Lỗi dịch thuật: {tre}")
-
-            # 3. Lồng tiếng nếu chưa có
-            dubbed_mp3 = f"{base_name}.dubbed.mp3"
-            if not os.path.exists(dubbed_mp3) and os.path.exists(vi_srt_path):
-                log_msg(f"  -> Đang lồng tiếng AI...")
-                try:
-                    asyncio.run(dubber.execute_dubbing(
-                        video_path=full_path,
-                        transcript_data={"segments": []},
-                        single_voice=req_data.get("voice", "vi-VN-HoaiMyNeural"),
-                        clean_bgm=req_data.get("clean_bgm", True)
-                    ))
-                except Exception as de:
-                    log_msg(f"  Lỗi lồng tiếng: {de}")
-
-            # 4. Render video hoàn chỉnh bằng Studio Editor
-            final_mp4 = f"{base_name}.final.mp4"
-            log_msg(f"  -> Đang dựng & render video hoàn thiện (.final.mp4)...")
+        for idx, filepath in enumerate(filepaths):
+            task["current_index"] = idx + 1
+            task["current_title"] = os.path.basename(filepath)
+            task["progress"] = int((idx / max(1, total)) * 100)
             try:
-                editor.render_final_video(
-                    input_video=full_path,
-                    output_video=final_mp4,
-                    aspect_ratio=req_data.get("aspect_ratio", "9:16"),
-                    blur_background=req_data.get("blur_background", True),
-                    blur_bottom_sub=req_data.get("blur_bottom_sub", True),
-                    flip_horizontal=req_data.get("flip_horizontal", True),
-                    speed=req_data.get("speed", 1.05),
-                    srt_path=vi_srt_path if os.path.exists(vi_srt_path) else None,
-                    dubbed_audio_path=dubbed_mp3 if os.path.exists(dubbed_mp3) else None
-                )
-                rel_final = os.path.relpath(final_mp4, current_download_dir).replace("\\", "/")
-                batch_tasks[batch_id]["completed"].append(rel_final)
-                log_msg(f"  ✓ Hoàn tất xuất sắc: {os.path.basename(final_mp4)}")
-            except Exception as re:
-                log_msg(f"  Lỗi render: {re}")
+                full_path = _resolve_safe_path(filepath)
+                if not os.path.isfile(full_path):
+                    fail(filepath, "input", "Không tìm thấy video nguồn")
+                    continue
+                if not _reserve_source_job(full_path):
+                    fail(filepath, "input", "Video đang được xử lý ở một tác vụ khác")
+                    continue
+                try:
+                    base_name = os.path.splitext(full_path)[0]
+                    transcript_path = f"{base_name}.transcript.json"
+                    source_srt = f"{base_name}.srt"
+                    vi_srt = f"{base_name}.vi.srt"
+                    dubbed_mp3 = f"{base_name}.dubbed.mp3"
+                    final_mp4 = f"{base_name}.final.mp4"
+                    transcript_data = {}
 
-        batch_tasks[batch_id]["status"] = "completed"
-        batch_tasks[batch_id]["progress"] = 100
-        batch_tasks[batch_id]["current_title"] = "Đã hoàn thành toàn bộ danh sách!"
-        log_msg("=== TẤT CẢ VIDEO ĐÃ ĐƯỢC XỬ LÝ HOÀN TẤT ===")
+                    if os.path.isfile(transcript_path):
+                        with open(transcript_path, "r", encoding="utf-8") as f:
+                            transcript_data = json.load(f)
+                    else:
+                        transcript_data["segments"] = _read_srt_segments(source_srt)
+                        if not transcript_data["segments"] and os.path.isfile(vi_srt):
+                            transcript_data["segments"] = _read_srt_segments(vi_srt)
+                            for segment in transcript_data["segments"]:
+                                segment["vietnamese"] = segment.pop("chinese")
+                                segment["chinese"] = ""
+                            transcript_data["detected_language"] = "vi"
 
-    except Exception as ge:
-        if batch_id in batch_tasks:
-            batch_tasks[batch_id]["status"] = "error"
-            batch_tasks[batch_id]["error"] = str(ge)
+                    if not transcript_data.get("segments"):
+                        transcript_data["segments"] = _read_srt_segments(source_srt)
+                        if not transcript_data["segments"] and os.path.isfile(vi_srt):
+                            transcript_data["segments"] = _read_srt_segments(vi_srt)
+                            for segment in transcript_data["segments"]:
+                                segment["vietnamese"] = segment.pop("chinese")
+                                segment["chinese"] = ""
+                            transcript_data["detected_language"] = "vi"
+
+                    segments = transcript_data.get("segments") or []
+                    if not segments:
+                        log_msg("  -> Đang nhận diện lời thoại Whisper...")
+                        try:
+                            result = asyncio.run(transcriber.transcribe_video(
+                                video_path=full_path,
+                                task_id=f"{batch_id}-{idx}",
+                                model_size="base",
+                                language="auto"
+                            ))
+                        except Exception as transcribe_error:
+                            fail(filepath, "transcribe", transcribe_error)
+                            continue
+                        if result.get("status") != "completed":
+                            fail(filepath, "transcribe", result.get("error") or "Nhận diện lời thoại thất bại")
+                            continue
+                        transcript_data = {
+                            "video_path": full_path,
+                            "model_size": "base",
+                            "detected_language": result.get("detected_language", "auto"),
+                            "duration": result.get("duration", 0),
+                            "segments": result.get("segments", []),
+                            "character_map": None
+                        }
+                        segments = transcript_data["segments"]
+
+                    if not segments:
+                        fail(filepath, "transcribe", "Không tìm thấy lời thoại để xử lý")
+                        continue
+
+                    detected_language = str(transcript_data.get("detected_language", "")).lower()
+                    source_is_vietnamese = detected_language.startswith("vi")
+                    if os.path.isfile(vi_srt) and any(not s.get("vietnamese") for s in segments):
+                        _apply_vietnamese_srt(segments, vi_srt)
+                    if source_is_vietnamese:
+                        for segment in segments:
+                            segment["vietnamese"] = segment.get("vietnamese") or segment.get("text", "")
+
+                    needs_translation = any(not str(s.get("vietnamese", "")).strip() for s in segments)
+                    if needs_translation:
+                        if not api_key:
+                            fail(filepath, "translate", f"Chưa cấu hình API key cho {provider}")
+                            continue
+                        log_msg("  -> Đang dịch lời thoại sang tiếng Việt...")
+                        pending_segments = [s for s in segments if not str(s.get("vietnamese", "")).strip()]
+                        try:
+                            translated = asyncio.run(translator.translate_with_character_map(
+                                segments=pending_segments,
+                                character_map=transcript_data.get("character_map") or {},
+                                api_key=api_key,
+                                provider=provider,
+                                model=model,
+                                base_url=base_url
+                            ))
+                        except Exception as translation_error:
+                            fail(filepath, "translate", translation_error)
+                            continue
+                        if len(translated) != len(pending_segments) or any(not str(s.get("vietnamese", "")).strip() for s in translated):
+                            fail(filepath, "translate", "Bản dịch thiếu một hoặc nhiều câu thoại")
+                            continue
+                        translated_by_id = {segment["id"]: segment for segment in translated if "id" in segment}
+                        for segment in segments:
+                            translated_segment = translated_by_id.get(segment.get("id"))
+                            if translated_segment and not str(segment.get("vietnamese", "")).strip():
+                                segment["vietnamese"] = translated_segment["vietnamese"]
+                        if any(not str(s.get("vietnamese", "")).strip() for s in segments):
+                            fail(filepath, "translate", "Không ghép được toàn bộ bản dịch vào transcript")
+                            continue
+                        transcript_data["segments"] = segments
+                        transcript_data["character_map"] = transcript_data.get("character_map") or {}
+                        transcript_data["ai_provider"] = provider
+                        transcript_data["ai_model"] = model
+
+                    transcript_data["segments"] = segments
+                    with open(transcript_path, "w", encoding="utf-8") as f:
+                        json.dump(transcript_data, f, ensure_ascii=False, indent=2)
+                    with open(vi_srt, "w", encoding="utf-8") as f:
+                        f.write(DouyinTranscriber.generate_srt(segments, "vietnamese"))
+
+                    if not os.path.isfile(dubbed_mp3) or os.path.getsize(dubbed_mp3) == 0:
+                        log_msg("  -> Đang lồng tiếng...")
+                        try:
+                            dub_result = asyncio.run(dubber.execute_dubbing(
+                                video_path=full_path,
+                                transcript_data=transcript_data,
+                                single_voice=req_data.get("voice", "vi-VN-HoaiMyNeural"),
+                                clean_bgm=req_data.get("clean_bgm", True),
+                                openai_api_key=cfg.get("openai_api_key", os.environ.get("OPENAI_API_KEY", "")),
+                                openai_base_url=cfg.get("openai_base_url", ""),
+                                task_id=f"{batch_id}-{idx}"
+                            ))
+                        except Exception as dub_error:
+                            fail(filepath, "dub", dub_error)
+                            continue
+                        if (dub_result.get("status") != "success" or not os.path.isfile(dubbed_mp3)
+                                or os.path.getsize(dubbed_mp3) == 0 or dubber.get_media_duration(dubbed_mp3) <= 0):
+                            fail(filepath, "dub", "Không tạo được file lồng tiếng hợp lệ")
+                            continue
+
+                    log_msg("  -> Đang render video hoàn chỉnh...")
+                    staged_output = f"{final_mp4}.{uuid.uuid4().hex}.tmp.mp4"
+                    try:
+                        editor.render_final_video(
+                            input_video=full_path,
+                            output_video=staged_output,
+                            aspect_ratio=req_data.get("aspect_ratio", "9:16"),
+                            blur_background=req_data.get("blur_background", True),
+                            blur_bottom_sub=req_data.get("blur_bottom_sub", True),
+                            flip_horizontal=req_data.get("flip_horizontal", True),
+                            zoom_percent=req_data.get("zoom_percent", 1.05),
+                            speed=req_data.get("speed", 1.05),
+                            srt_path=vi_srt if req_data.get("burn_subtitles", True) else None,
+                            dubbed_audio_path=dubbed_mp3
+                        )
+                        if (not os.path.isfile(staged_output) or os.path.getsize(staged_output) == 0
+                                or editor.get_video_duration(staged_output) <= 0):
+                            raise RuntimeError("Render không tạo được file đầu ra")
+                        os.replace(staged_output, final_mp4)
+                    except Exception as render_error:
+                        fail(filepath, "render", render_error)
+                        continue
+                    finally:
+                        if os.path.exists(staged_output):
+                            os.remove(staged_output)
+
+                    rel_final = os.path.relpath(final_mp4, current_download_dir).replace("\\", "/")
+                    task["completed"].append(rel_final)
+                    log_msg(f"  ✓ Hoàn tất: {os.path.basename(final_mp4)}")
+                finally:
+                    _release_source_job(full_path)
+            except Exception as item_error:
+                fail(filepath, "process", item_error)
+
+        task["progress"] = 100
+        task["current_title"] = "Đã xử lý xong danh sách"
+        if task["failed"] and task["completed"]:
+            task["status"] = "partial"
+        elif task["failed"]:
+            task["status"] = "error"
+        else:
+            task["status"] = "completed"
+        log_msg(f"=== Xong: {len(task['completed'])} thành công, {len(task['failed'])} thất bại ===")
+    except Exception as worker_error:
+        task["status"] = "error"
+        task["error"] = str(worker_error)
+        task["progress"] = 100
 
 @app.post("/api/batch/run")
 async def batch_run_endpoint(req: BatchRunRequest):
     """Khởi chạy quy trình xử lý hàng loạt từ A-Z cho các video đã chọn."""
     if not req.filepaths:
         raise HTTPException(status_code=400, detail="Danh sách video rỗng")
+    if not math.isfinite(req.speed) or not 0.5 <= req.speed <= 2.0:
+        raise HTTPException(status_code=400, detail="Tốc độ phải nằm trong khoảng 0.5 đến 2.0")
+    if not math.isfinite(req.zoom_percent) or not 1.0 <= req.zoom_percent <= 4.0:
+        raise HTTPException(status_code=400, detail="Zoom phải nằm trong khoảng 1.0 đến 4.0")
 
     batch_id = str(uuid.uuid4())
-    import threading
+    batch_tasks[batch_id] = {
+        "status": "pending", "total": len(req.filepaths), "current_index": 0,
+        "current_title": "", "progress": 0, "logs": [], "completed": [],
+        "failed": [], "error": None
+    }
     t = threading.Thread(target=_run_batch_pipeline_worker, args=(batch_id, req.dict()), daemon=True)
     t.start()
 
@@ -1714,15 +2047,20 @@ async def start_crop_trim(req: CropTrimRequest):
     task_id = str(uuid.uuid4())
 
     async def _run():
-        await editor.execute_crop_trim(
-            task_id=task_id,
-            input_video=full_path,
-            output_video=output_path,
-            crop=crop,
-            trim=trim,
-            lossless_trim=bool(req.lossless_trim)
-        )
+        try:
+            await editor.execute_crop_trim(
+                task_id=task_id,
+                input_video=full_path,
+                output_video=output_path,
+                crop=crop,
+                trim=trim,
+                lossless_trim=bool(req.lossless_trim)
+            )
+        finally:
+            _release_source_job(full_path)
 
+    if not _reserve_source_job(full_path):
+        raise HTTPException(status_code=409, detail="Video đang được xử lý")
     asyncio.create_task(_run())
 
     return {"task_id": task_id, "status": "started"}

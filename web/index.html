@@ -27,12 +27,12 @@
   <!-- Header -->
   <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur sticky top-0 z-40">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 via-red-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-rose-500/20">
+      <div class="flex items-center space-x-3 group cursor-pointer">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 via-red-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-rose-500/20 group-hover:scale-105 group-hover:shadow-rose-500/40 transition-all duration-300">
           <i data-lucide="video" class="w-5 h-5 text-white"></i>
         </div>
         <div>
-          <h1 class="font-bold text-lg text-white flex items-center gap-2">
+          <h1 class="font-bold text-lg text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-200 group-hover:to-rose-200 transition-colors flex items-center gap-2">
             Douyin, Facebook & YouTube Downloader <span class="text-xs bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded-full border border-rose-500/30">MVP</span>
           </h1>
           <p class="text-xs text-slate-400">Trích xuất & tải video Douyin, Facebook & YouTube Full HD không logo</p>
@@ -147,21 +147,9 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <!-- Collection Picker -->
-            <div class="flex items-center space-x-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-700/80">
-              <i data-lucide="folder" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
-              <span class="text-xs text-slate-400">Bộ sưu tập:</span>
-              <select id="collectionSelect" onchange="currentSelectedCollection = this.value" class="bg-transparent text-xs text-white font-medium outline-none cursor-pointer">
-                <option value="Chung">Chung</option>
-              </select>
-              <button onclick="openCreateCollectionModal()" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded-lg border border-slate-700 transition" title="Tạo bộ sưu tập mới">
-                + Tạo nhóm
-              </button>
-            </div>
-
             <button onclick="downloadSelected()" class="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium px-4 py-2 rounded-xl transition shadow shadow-rose-600/30">
               <i data-lucide="download" class="w-4 h-4"></i>
-              <span>Tải các video đã chọn</span>
+              <span id="downloadSelectedLabel">Tải video vào Chung</span>
             </button>
             <button onclick="deleteSelectedParsedVideos()" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-400 border border-slate-700 hover:border-rose-800/60 text-xs font-medium px-3 py-2 rounded-xl transition" title="Chỉ xóa các video đang được tích chọn khỏi danh sách">
               <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
@@ -197,7 +185,7 @@
         <div class="flex items-center space-x-2">
           <button onclick="openCreateCollectionModal()" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-xl border border-slate-700 transition">
             <i data-lucide="folder-plus" class="w-3.5 h-3.5 text-amber-400"></i>
-            <span>+ Tạo nhóm</span>
+            <span>+ Tạo thư mục</span>
           </button>
           <button onclick="loadHistory()" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-xl border border-slate-700 transition">
             <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
@@ -220,12 +208,13 @@
         <div class="flex items-center space-x-3">
           <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
             <input type="checkbox" id="checkAllHistory" onchange="toggleSelectAllHistory()" class="w-4 h-4 rounded bg-slate-950 border-slate-700 text-rose-500 focus:ring-rose-500 cursor-pointer" />
-            <span>Chọn tất cả (trong nhóm)</span>
+            <span>Chọn tất cả (trong thư mục)</span>
           </label>
           <span class="text-slate-600">|</span>
           <span id="historySelectedCount" class="text-xs text-slate-400">Đã chọn 0 video</span>
         </div>
         <div class="flex items-center space-x-2">
+          <button id="btnMoveSelected" onclick="openMoveFolder()" disabled class="rounded-xl bg-amber-500 text-slate-950 px-4 py-2 text-sm font-semibold disabled:opacity-40">Chuyển thư mục…</button>
           <button id="btnBatchRun" onclick="openBatchModal()" disabled class="flex items-center space-x-1.5 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-1.5 rounded-xl transition shadow shadow-indigo-600/30">
             <i data-lucide="zap" class="w-3.5 h-3.5 fill-current"></i>
             <span>🚀 Xử lý hàng loạt (Batch Run)</span>
@@ -624,19 +613,19 @@
           <i data-lucide="folder-plus" class="w-5 h-5"></i>
         </div>
         <div>
-          <h3 class="text-base font-semibold text-white">Tạo bộ sưu tập mới</h3>
-          <p class="text-xs text-slate-400">Tạo thư mục con để gom nhóm video gọn gàng</p>
+          <h3 class="text-base font-semibold text-white">Tạo thư mục mới</h3>
+          <p class="text-xs text-slate-400">Tạo thư mục con để gom thư mục video gọn gàng</p>
         </div>
       </div>
       <div>
-        <label class="block text-xs font-medium text-slate-300 mb-1.5">Tên bộ sưu tập (Ví dụ: Anime, Gym, Hài hước...):</label>
-        <input id="newCollectionInput" type="text" maxlength="30" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400" placeholder="Nhập tên nhóm..." onkeydown="if(event.key==='Enter') executeCreateCollection()" />
+        <label class="block text-xs font-medium text-slate-300 mb-1.5">Tên thư mục (Ví dụ: Anime, Gym, Hài hước...):</label>
+        <input id="newCollectionInput" type="text" maxlength="30" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400" placeholder="Nhập tên thư mục..." onkeydown="if(event.key==='Enter') executeCreateCollection()" />
       </div>
       <div class="flex items-center justify-end space-x-2 pt-2">
         <button onclick="closeCreateCollectionModal()" class="px-4 py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Hủy</button>
         <button onclick="executeCreateCollection()" class="px-4 py-2 text-xs rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold transition flex items-center gap-1.5">
           <i data-lucide="check" class="w-3.5 h-3.5"></i>
-          <span>Tạo nhóm</span>
+          <span>Tạo thư mục</span>
         </button>
       </div>
     </div>
@@ -669,7 +658,11 @@
         </button>
         <button id="tabBtnOpenAI" onclick="switchAiTab('openai')" class="flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white">
           <span id="modalOpenaiDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
-          <span>ChatGPT (OpenAI)</span>
+          <span>ChatGPT</span>
+        </button>
+        <button id="tabBtnGLM" onclick="switchAiTab('glm')" class="flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white">
+          <span id="modalGlmDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span>GLM (ZhipuAI)</span>
         </button>
       </div>
 
@@ -735,7 +728,7 @@
 
         <!-- Custom Base URL (Optional) -->
         <div class="space-y-1">
-          <label class="block text-xs font-medium text-slate-300">Custom Base URL (Tùy chọn cho Proxy / OpenRouter / Zhipu):</label>
+          <label class="block text-xs font-medium text-slate-300">Custom Base URL (Tùy chọn cho Proxy / OpenRouter):</label>
           <input id="openaiBaseUrlInput" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-400 font-mono" placeholder="Mặc định: https://api.openai.com/v1" />
         </div>
 
@@ -745,28 +738,63 @@
           <select id="openaiModelSelect" onchange="onOpenaiModelSelectChange()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-400 cursor-pointer">
             <option value="gpt-4o-mini" selected>GPT-4o Mini (Khuyên dùng - Nhanh, chi phí siêu rẻ)</option>
             <option value="gpt-4o">GPT-4o (Thông minh cao cấp, phân tích sâu)</option>
-            <option value="glm-5">GLM-5 (Zhipu AI / OpenRouter)</option>
-            <option value="glm-4">GLM-4</option>
             <option value="custom">Tự nhập tên model tùy biến...</option>
           </select>
-          <input id="openaiCustomModelInput" type="text" placeholder="Nhập tên model (ví dụ: glm-5 hoặc deepseek-chat)" class="w-full mt-1.5 bg-slate-950 border border-indigo-400/50 rounded-xl px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 font-mono hidden" />
+          <input id="openaiCustomModelInput" type="text" placeholder="Nhập tên model (ví dụ: deepseek-chat)" class="w-full mt-1.5 bg-slate-950 border border-indigo-400/50 rounded-xl px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 font-mono hidden" />
         </div>
-
         <div class="flex items-center justify-between pt-1">
           <button type="button" onclick="testAiConnection('openai')" class="px-3 py-1.5 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white border border-sky-500/30 transition flex items-center gap-1.5">
             <i data-lucide="zap" class="w-3.5 h-3.5 text-sky-400"></i>
-            <span>Test thử Model OpenAI / GLM</span>
+            <span>Test thử Model OpenAI</span>
           </button>
           <div id="openaiTestResult" class="text-xs"></div>
         </div>
       </div>
 
+      <!-- Tab 3: GLM / ZhipuAI -->
+      <div id="aiTabContentGLM" class="space-y-3 hidden">
+        <div class="flex items-center justify-between">
+          <label class="block text-xs font-medium text-slate-300">GLM API Key:</label>
+          <span id="glmKeyStatusText" class="text-[11px] text-slate-400">Chưa cấu hình</span>
+        </div>
+        <div class="relative">
+          <input id="glmApiKeyInput" type="password" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 pr-10 font-mono" placeholder="Dán ZhipuAI API Key..." />
+          <button type="button" onclick="togglePasswordVisibility('glmApiKeyInput', 'glmEyeIcon')" class="absolute right-2.5 top-2 text-slate-400 hover:text-white">
+            <i id="glmEyeIcon" data-lucide="eye" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="mb-3 mt-3">
+          <label class="block text-xs text-slate-400 mb-1">GLM Base URL (Tùy chọn - Dành cho Proxy API):</label>
+          <input type="text" id="glmBaseUrlInput" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-400" placeholder="VD: https://open.bigmodel.cn/api/paas/v4/">
+        </div>
+        <div class="space-y-1.5">
+          <label class="block text-xs font-medium text-slate-300">Mô hình GLM mặc định:</label>
+          <select id="glmModelSelect" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-emerald-400 cursor-pointer" onchange="onGlmModelSelectChange()">
+            <option value="glm-4-flash" selected>GLM-4 Flash (Nhanh & Rẻ)</option>
+            <option value="glm-4">GLM-4</option>
+            <option value="glm-4-plus">GLM-4 Plus</option>
+            <option value="glm-4v">GLM-4V (Vision)</option>
+            <option value="custom">Tự nhập tên model tùy biến...</option>
+          </select>
+          <input id="glmCustomModelInput" type="text" placeholder="Nhập tên model GLM (ví dụ: glm-4-flash)" class="w-full mt-1.5 bg-slate-950 border border-emerald-400/50 rounded-xl px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 font-mono hidden" />
+        </div>
+
+        <div class="flex items-center justify-between pt-1">
+          <button type="button" onclick="testAiConnection('glm')" class="px-3 py-1.5 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-emerald-500/30 transition flex items-center gap-1.5">
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span>Test thử Model GLM</span>
+          </button>
+          <div id="glmTestResult" class="text-xs"></div>
+        </div>
+      </div>
       <!-- Priority Provider Selector -->
       <div class="pt-2 border-t border-slate-800 space-y-1.5">
         <label class="block text-xs font-medium text-slate-300">Nhà cung cấp AI mặc định ưu tiên:</label>
         <select id="defaultAiProviderSelect" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 outline-none focus:border-amber-400 cursor-pointer font-medium">
           <option value="gemini">Google Gemini (Gemini 2.5 Flash - Miễn phí)</option>
           <option value="openai">ChatGPT / OpenAI (GPT-4o Mini / GPT-4o)</option>
+          <option value="glm">GLM (ZhipuAI / GLM-5)</option>
         </select>
       </div>
 
@@ -1234,6 +1262,18 @@
                   <input id="dubBgVolSlider" type="range" min="0" max="100" step="5" value="15" oninput="updateDubVolLabels()" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
                   <p class="text-[10px] text-slate-500 mt-0.5">15% = Giữ nhạc nền & tiếng động. 0% = Tắt hoàn toàn tiếng gốc.</p>
                 </div>
+              </div>
+
+              <!-- Clean BGM Toggle -->
+              <div class="flex items-center justify-between px-0.5 py-2 border-t border-slate-800/60">
+                <label class="flex items-center space-x-2 cursor-pointer text-xs text-slate-300">
+                  <input id="dubCleanBgmCheck" type="checkbox" class="w-4 h-4 rounded text-purple-500 bg-slate-900 border-slate-700 focus:ring-purple-500">
+                  <span class="flex items-center gap-1.5">
+                    <i data-lucide="scissors" class="w-3.5 h-3.5 text-purple-400"></i>
+                    <span class="font-medium">Tách giọng gốc (Clean BGM)</span>
+                  </span>
+                </label>
+                <span class="text-[10px] text-slate-500 ml-2">Dùng AI loại bỏ tiếng nói khỏi nhạc nền trước khi dub — âm thanh sạch hơn</span>
               </div>
 
               <!-- Action Button & Status -->
@@ -1960,7 +2000,19 @@
   </div>
 
   <!-- App Script -->
-  <script>
+  
+  <div id="folderPicker" role="dialog" aria-modal="true" aria-labelledby="folderPickerTitle" class="hidden fixed inset-0 bg-black/80 z-40 flex items-center justify-center p-4">
+    <section class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-700 p-5 space-y-4">
+      <div class="flex justify-between gap-3"><h2 id="folderPickerTitle" class="text-lg font-semibold"></h2><button onclick="closeFolderPicker()" aria-label="Đóng chọn thư mục">✕</button></div>
+      <p id="folderPickerInfo" class="text-sm text-slate-400 break-words"></p>
+      <div class="flex gap-2"><input id="folderSearch" aria-label="Tìm thư mục hoặc video" placeholder="Tìm thư mục hoặc video…" class="min-w-0 flex-1 rounded-xl bg-slate-950 border border-slate-700 p-3"><button id="folderCreate" onclick="openCreateCollectionModal()" class="rounded-xl border border-slate-600 px-3">Tạo thư mục</button></div>
+      <div id="folderPickerGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+      <div id="folderResult" role="status" class="space-y-2 text-sm"></div>
+      <div class="flex flex-wrap justify-end gap-2"><button onclick="closeFolderPicker()" class="rounded-xl border border-slate-600 px-4 py-2">Đóng</button><button id="folderSubmit" onclick="submitFolderPicker()" class="rounded-xl bg-amber-500 text-slate-950 px-4 py-2 font-semibold disabled:opacity-40"></button></div>
+    </section>
+  </div>
+  <script src="/static/folders.js"></script>
+<script>
     let currentTab = 'new';
     let videosData = [];
     let historyVideos = [];
@@ -1981,6 +2033,10 @@
     let maskedOpenaiKey = '';
     let openaiBaseUrl = '';
     let openaiModel = 'gpt-4o-mini';
+    let hasGlmKey = false;
+    let maskedGlmKey = '';
+    let glmBaseUrl = '';
+    let glmModel = 'glm-4-flash';
     let defaultAiProvider = 'gemini';
     let defaultAiModel = 'gemini-2.5-flash';
     let activeAiTab = 'gemini';
@@ -1996,7 +2052,23 @@
     let activeDialogueFilter = '';
 
     // Initialize Lucide icons
-    lucide.createIcons();
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    function showConnectionError() {
+      let banner = document.getElementById('connectionError');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'connectionError';
+        banner.setAttribute('role', 'alert');
+        banner.style.cssText = 'padding:16px;background:#7f1d1d;color:white;position:sticky;top:0;z-index:9999';
+        document.body.prepend(banner);
+      }
+      banner.textContent = 'Không tải được dữ liệu từ máy chủ. Hãy chạy run.bat trong thư mục Nambeo, sau đó tải lại trang. Lỗi kết nối không có nghĩa dữ liệu đã bị xóa.';
+    }
+
+    refreshIcons();
 
     // Persistence for parsed videos
     function saveParsedVideos() {
@@ -2042,7 +2114,7 @@
         btnNew.className = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition text-slate-400 hover:text-white';
         loadHistory();
       }
-      lucide.createIcons();
+      refreshIcons();
     }
 
     // Config & AI Keys Management
@@ -2058,11 +2130,24 @@
         maskedOpenaiKey = data.openai_api_key_masked || '';
         openaiBaseUrl = data.openai_base_url || '';
         openaiModel = data.openai_model || 'gpt-4o-mini';
+        
+        hasGlmKey = data.has_glm_key;
+        maskedGlmKey = data.glm_api_key_masked || '';
+        glmBaseUrl = data.glm_base_url || '';
+        glmModel = data.glm_model || 'glm-4-flash';
+
         defaultAiProvider = data.default_ai_provider || 'gemini';
-        defaultAiModel = data.default_ai_model || (defaultAiProvider === 'openai' ? openaiModel : geminiModel);
+        if (defaultAiProvider === 'openai') {
+            defaultAiModel = data.default_ai_model || openaiModel;
+        } else if (defaultAiProvider === 'glm') {
+            defaultAiModel = data.default_ai_model || glmModel;
+        } else {
+            defaultAiModel = data.default_ai_model || geminiModel;
+        }
         updateAiStatusUI();
       } catch (e) {
         console.error('Failed to load config:', e);
+        showConnectionError();
       }
     }
 
@@ -2071,9 +2156,11 @@
       const oDot = document.getElementById('openaiStatusDot');
       const gText = document.getElementById('geminiKeyStatusText');
       const oText = document.getElementById('openaiKeyStatusText');
+      const glmText = document.getElementById('glmKeyStatusText');
       const activeBadge = document.getElementById('activeAiBadge');
       const mGDot = document.getElementById('modalGeminiDot');
       const mODot = document.getElementById('modalOpenaiDot');
+      const mGlmDot = document.getElementById('modalGlmDot');
 
       // Gemini status
       if (gDot) {
@@ -2108,22 +2195,59 @@
           ? `<span class="text-sky-400 font-medium">Đã lưu (${maskedOpenaiKey})</span>`
           : `<span class="text-amber-400 font-medium">Chưa cấu hình</span>`;
       }
+      
+      // GLM status
+      if (mGlmDot) {
+        mGlmDot.className = hasGlmKey
+          ? 'w-2 h-2 rounded-full bg-emerald-400 inline-block'
+          : 'w-2 h-2 rounded-full bg-slate-500 inline-block';
+      }
+      if (glmText) {
+        glmText.innerHTML = hasGlmKey
+          ? `<span class="text-emerald-400 font-medium">Đã lưu (${maskedGlmKey})</span>`
+          : `<span class="text-amber-400 font-medium">Chưa cấu hình</span>`;
+      }
 
       // Active Badge on Header
       if (activeBadge) {
-        const isGemini = defaultAiProvider === 'gemini';
-        activeBadge.innerText = isGemini ? 'Gemini' : 'ChatGPT';
-        activeBadge.className = isGemini
-          ? 'hidden md:inline text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30 font-medium'
-          : 'hidden md:inline text-[9px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded border border-sky-500/30 font-medium';
+        let badgeName = 'Gemini';
+        let badgeClass = 'hidden md:inline text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30 font-medium';
+        if (defaultAiProvider === 'openai') {
+            badgeName = 'ChatGPT';
+            badgeClass = 'hidden md:inline text-[9px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded border border-sky-500/30 font-medium';
+        } else if (defaultAiProvider === 'glm') {
+            badgeName = 'GLM';
+            badgeClass = 'hidden md:inline text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30 font-medium';
+        }
+        activeBadge.innerText = badgeName;
+        activeBadge.className = badgeClass;
       }
 
       // Sync form values
       const baseUrlInput = document.getElementById('openaiBaseUrlInput');
       if (baseUrlInput && openaiBaseUrl) baseUrlInput.value = openaiBaseUrl;
 
+      const glmBaseUrlInput = document.getElementById('glmBaseUrlInput');
+      if (glmBaseUrlInput && glmBaseUrl) glmBaseUrlInput.value = glmBaseUrl;
+
       const gModelSelect = document.getElementById('geminiModelSelect');
       const gCustomInput = document.getElementById('geminiCustomModelInput');
+      
+      const glmModelSelect = document.getElementById('glmModelSelect');
+      const glmCustomInput = document.getElementById('glmCustomModelInput');
+      if (glmModelSelect && glmModel) {
+        const optionExists = Array.from(glmModelSelect.options).some(opt => opt.value === glmModel);
+        if (optionExists) {
+          glmModelSelect.value = glmModel;
+          if (glmCustomInput) glmCustomInput.classList.add('hidden');
+        } else {
+          glmModelSelect.value = 'custom';
+          if (glmCustomInput) {
+            glmCustomInput.classList.remove('hidden');
+            glmCustomInput.value = glmModel;
+          }
+        }
+      }
       if (gModelSelect && geminiModel) {
         const optionExists = Array.from(gModelSelect.options).some(opt => opt.value === geminiModel);
         if (optionExists) {
@@ -2187,9 +2311,23 @@
       }
     }
 
+    function onGlmModelSelectChange() {
+      const select = document.getElementById('glmModelSelect');
+      const input = document.getElementById('glmCustomModelInput');
+      if (!select || !input) return;
+      if (select.value === 'custom') {
+        input.classList.remove('hidden');
+        input.focus();
+      } else {
+        input.classList.add('hidden');
+      }
+    }
+
     async function testAiConnection(provider) {
       const isGemini = provider === 'gemini';
-      const resultDiv = document.getElementById(isGemini ? 'geminiTestResult' : 'openaiTestResult');
+      const isGlm = provider === 'glm';
+      const resultDivId = isGemini ? 'geminiTestResult' : (isGlm ? 'glmTestResult' : 'openaiTestResult');
+      const resultDiv = document.getElementById(resultDivId);
       if (!resultDiv) return;
 
       let apiKey = '';
@@ -2202,6 +2340,14 @@
         const cust = document.getElementById('geminiCustomModelInput');
         apiKey = keyInput ? keyInput.value.trim() : '';
         model = (sel && sel.value === 'custom' && cust) ? cust.value.trim() : (sel ? sel.value : 'gemini-2.5-flash');
+      } else if (isGlm) {
+        const keyInput = document.getElementById('glmApiKeyInput');
+        const baseInput = document.getElementById('glmBaseUrlInput');
+        const sel = document.getElementById('glmModelSelect');
+        const cust = document.getElementById('glmCustomModelInput');
+        apiKey = keyInput ? keyInput.value.trim() : '';
+        baseUrl = baseInput ? baseInput.value.trim() : '';
+        model = (sel && sel.value === 'custom' && cust) ? cust.value.trim() : (sel ? sel.value : 'glm-4-flash');
       } else {
         const keyInput = document.getElementById('openaiApiKeyInput');
         const baseInput = document.getElementById('openaiBaseUrlInput');
@@ -2213,7 +2359,7 @@
       }
 
       resultDiv.innerHTML = `<span class="text-slate-400 flex items-center gap-1"><i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Đang test...</span>`;
-      lucide.createIcons();
+      refreshIcons();
 
       try {
         const res = await fetch('/api/config/ai/test', {
@@ -2238,7 +2384,7 @@
       } catch (e) {
         resultDiv.innerHTML = `<span class="text-rose-400 font-medium">✗ Lỗi máy chủ</span>`;
       }
-      lucide.createIcons();
+      refreshIcons();
     }
 
     async function testQuickAiEngine() {
@@ -2375,7 +2521,7 @@
           document.getElementById('geminiApiKeyInput').focus();
         }
       }, 50);
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function closeAiSettingsModal() {
@@ -2390,21 +2536,33 @@
       activeAiTab = tab;
       const btnG = document.getElementById('tabBtnGemini');
       const btnO = document.getElementById('tabBtnOpenAI');
+      const btnGLM = document.getElementById('tabBtnGLM');
       const cG = document.getElementById('aiTabContentGemini');
       const cO = document.getElementById('aiTabContentOpenAI');
+      const cGLM = document.getElementById('aiTabContentGLM');
+
+      const activeClass = 'flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg font-medium transition shadow';
+      const inactiveClass = 'flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white';
+
+      btnG.className = inactiveClass;
+      btnO.className = inactiveClass;
+      if(btnGLM) btnGLM.className = inactiveClass;
+      
+      cG.classList.add('hidden');
+      cO.classList.add('hidden');
+      if(cGLM) cGLM.classList.add('hidden');
 
       if (tab === 'gemini') {
-        btnG.className = 'flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg font-medium transition bg-amber-500 text-slate-950 shadow';
-        btnO.className = 'flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white';
+        btnG.className = activeClass + ' bg-amber-500 text-slate-950';
         cG.classList.remove('hidden');
-        cO.classList.add('hidden');
-      } else {
-        btnO.className = 'flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg font-medium transition bg-sky-500 text-slate-950 shadow';
-        btnG.className = 'flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white';
+      } else if (tab === 'openai') {
+        btnO.className = activeClass + ' bg-sky-500 text-slate-950';
         cO.classList.remove('hidden');
-        cG.classList.add('hidden');
+      } else if (tab === 'glm') {
+        if(btnGLM) btnGLM.className = activeClass + ' bg-emerald-500 text-slate-950';
+        if(cGLM) cGLM.classList.remove('hidden');
       }
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function togglePasswordVisibility(inputId, iconId) {
@@ -2418,7 +2576,7 @@
         input.type = 'password';
         icon.setAttribute('data-lucide', 'eye');
       }
-      lucide.createIcons();
+      refreshIcons();
     }
 
     async function saveAiConfig() {
@@ -2429,12 +2587,18 @@
       const oBaseInput = document.getElementById('openaiBaseUrlInput');
       const oModelSelect = document.getElementById('openaiModelSelect');
       const oCustomInput = document.getElementById('openaiCustomModelInput');
+      const glmInput = document.getElementById('glmApiKeyInput');
+      const glmBaseInput = document.getElementById('glmBaseUrlInput');
+      const glmModelSelect = document.getElementById('glmModelSelect');
+      const glmCustomInput = document.getElementById('glmCustomModelInput');
       const pSelect = document.getElementById('defaultAiProviderSelect');
 
       const payload = {};
       const gVal = gInput ? gInput.value.trim() : '';
       const oVal = oInput ? oInput.value.trim() : '';
       const oBaseVal = oBaseInput ? oBaseInput.value.trim() : '';
+      const glmVal = glmInput ? glmInput.value.trim() : '';
+      const glmBaseVal = glmBaseInput ? glmBaseInput.value.trim() : '';
 
       if (gVal) payload.gemini_api_key = gVal;
       if (gModelSelect) {
@@ -2449,11 +2613,23 @@
           ? oCustomInput.value.trim()
           : oModelSelect.value;
       }
+      if (glmVal) payload.glm_api_key = glmVal;
+      if (glmBaseInput) payload.glm_base_url = glmBaseVal;
+      if (glmModelSelect) {
+        payload.glm_model = (glmModelSelect.value === 'custom' && glmCustomInput && glmCustomInput.value.trim())
+          ? glmCustomInput.value.trim()
+          : glmModelSelect.value;
+      }
+      
       if (pSelect) {
         payload.default_ai_provider = pSelect.value;
-        payload.default_ai_model = pSelect.value === 'openai'
-          ? (payload.openai_model || 'gpt-4o-mini')
-          : (payload.gemini_model || 'gemini-2.5-flash');
+        if (pSelect.value === 'openai') {
+          payload.default_ai_model = payload.openai_model || 'gpt-4o-mini';
+        } else if (pSelect.value === 'glm') {
+          payload.default_ai_model = payload.glm_model || 'glm-5';
+        } else {
+          payload.default_ai_model = payload.gemini_model || 'gemini-2.5-flash';
+        }
       }
 
       try {
@@ -2482,72 +2658,16 @@
       try {
         const res = await fetch('/api/collections');
         const data = await res.json();
+        if (!res.ok) throw new Error('Không tải được thư mục');
         collections = data.collections || ['Chung'];
+        let saved;
+        try { saved = localStorage.getItem(folderStorageKey()); } catch (_) {}
+        currentSelectedCollection = collections.includes(saved) ? saved : 'Chung';
         renderCollectionDropdown();
         renderCollectionFilterPills();
       } catch (e) {
         console.error('Failed to load collections:', e);
       }
-    }
-
-    function renderCollectionDropdown() {
-      const select = document.getElementById('collectionSelect');
-      if (!select) return;
-      select.innerHTML = '';
-      collections.forEach(col => {
-        const opt = document.createElement('option');
-        opt.value = col;
-        opt.innerText = col;
-        if (col === currentSelectedCollection) opt.selected = true;
-        select.appendChild(opt);
-      });
-    }
-
-    function renderCollectionFilterPills() {
-      const bar = document.getElementById('collectionFilterBar');
-      if (!bar) return;
-      bar.innerHTML = '';
-
-      // "Tất cả" pill
-      const isAll = activeHistoryFilter === 'ALL';
-      const allBtn = document.createElement('button');
-      allBtn.className = `px-3 py-1.5 rounded-xl text-xs font-medium transition shrink-0 flex items-center gap-1.5 ${
-        isAll
-          ? 'bg-indigo-600 text-white shadow shadow-indigo-600/30'
-          : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
-      }`;
-      allBtn.innerHTML = `<span>Tất cả</span><span class="text-[10px] px-1.5 py-0.5 rounded-full ${
-        isAll ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'
-      }">${historyVideos.length}</span>`;
-      allBtn.onclick = () => {
-        activeHistoryFilter = 'ALL';
-        renderHistoryCards();
-        renderCollectionFilterPills();
-      };
-      bar.appendChild(allBtn);
-
-      // Per collection pills
-      collections.forEach(col => {
-        const count = historyVideos.filter(v => (v.collection || 'Chung') === col).length;
-        const isSel = activeHistoryFilter === col;
-        const btn = document.createElement('button');
-        btn.className = `px-3 py-1.5 rounded-xl text-xs font-medium transition shrink-0 flex items-center gap-1.5 ${
-          isSel
-            ? 'bg-amber-500 text-slate-950 font-semibold shadow shadow-amber-500/30'
-            : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
-        }`;
-        btn.innerHTML = `<i data-lucide="folder" class="w-3 h-3 ${isSel ? 'text-slate-950' : 'text-amber-400'}"></i><span>${col}</span><span class="text-[10px] px-1.5 py-0.5 rounded-full ${
-          isSel ? 'bg-black/20 text-slate-950' : 'bg-slate-800 text-slate-400'
-        }">${count}</span>`;
-        btn.onclick = () => {
-          activeHistoryFilter = col;
-          renderHistoryCards();
-          renderCollectionFilterPills();
-        };
-        bar.appendChild(btn);
-      });
-
-      lucide.createIcons();
     }
 
     function openCreateCollectionModal() {
@@ -2565,7 +2685,7 @@
       const input = document.getElementById('newCollectionInput');
       const name = input.value.trim();
       if (!name) {
-        return showToast('Vui lòng nhập tên bộ sưu tập', true);
+        return showToast('Vui lòng nhập tên thư mục', true);
       }
       try {
         const res = await fetch('/api/collections', {
@@ -2575,12 +2695,18 @@
         });
         const data = await res.json();
         if (res.ok) {
-          showToast(`Đã tạo bộ sưu tập: ${data.collection}`);
-          currentSelectedCollection = data.collection;
+          showToast(`Đã tạo thư mục: ${data.collection}`);
           closeCreateCollectionModal();
           await loadCollections();
+          if (folderDialog) {
+            folderDialog.target = data.collection;
+            renderFolderPicker();
+          } else if (currentTab === 'history') {
+            activeHistoryFilter = data.collection;
+            renderCollectionFilterPills(); renderHistoryCards();
+          } else { selectDownloadFolder(data.collection); }
         } else {
-          showToast(data.detail || 'Lỗi khi tạo bộ sưu tập', true);
+          showToast(data.detail || 'Lỗi khi tạo thư mục', true);
         }
       } catch (e) {
         showToast('Lỗi kết nối máy chủ', true);
@@ -2600,7 +2726,7 @@
         toastIcon.setAttribute('data-lucide', 'check-circle');
         toastIcon.className = 'w-4 h-4 text-emerald-400';
       }
-      lucide.createIcons();
+      refreshIcons();
 
       toast.classList.remove('translate-y-10', 'opacity-0');
       toast.classList.add('translate-y-0', 'opacity-100');
@@ -2643,10 +2769,12 @@
         if (res.ok) {
           showToast('Đã mở thư mục trên Windows Explorer');
         } else {
-          showToast('Không thể mở thư mục', true);
+          const data = await res.json();
+          showToast(data.detail || 'Không thể mở thư mục', true);
         }
       } catch (e) {
-        showToast('Lỗi mở thư mục', true);
+        showConnectionError();
+        showToast('Không kết nối được máy chủ để mở thư mục', true);
       }
     }
 
@@ -2683,7 +2811,7 @@
       parseText.innerText = 'Đang phân tích...';
       parseIcon.setAttribute('data-lucide', 'loader-2');
       parseIcon.classList.add('animate-spin');
-      lucide.createIcons();
+      refreshIcons();
 
       try {
         const res = await fetch('/api/parse', {
@@ -2712,7 +2840,7 @@
         parseText.innerText = 'Phân tích link';
         parseIcon.setAttribute('data-lucide', 'search');
         parseIcon.classList.remove('animate-spin');
-        lucide.createIcons();
+        refreshIcons();
       }
     }
 
@@ -2752,6 +2880,16 @@
       };
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[ch]);
+    }
+
+    function jsAttrArg(value) {
+      return escapeHtml(JSON.stringify(String(value ?? '')).replace(/</g, '\\u003c'));
+    }
+
     function renderVideoList() {
       const container = document.getElementById('videoGrid');
       const section = document.getElementById('resultsSection');
@@ -2783,18 +2921,18 @@
         card.innerHTML = `
           <!-- Thumbnail & Badges -->
           <div class="relative w-full aspect-video bg-slate-950 overflow-hidden group">
-            <img id="imgThumb-${v.id}" src="${proxyCover}" alt="Cover" class="w-full h-full object-cover transition duration-300 group-hover:scale-105" onerror="this.src='https://placehold.co/600x340/0f172a/cbd5e1?text=No+Cover'" />
+            <img id="imgThumb-${escapeHtml(v.id)}" src="${escapeHtml(proxyCover)}" alt="Cover" class="w-full h-full object-cover transition duration-300 group-hover:scale-105" onerror="this.src='https://placehold.co/600x340/0f172a/cbd5e1?text=No+Cover'" />
             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30"></div>
             
             <!-- Checkbox & Platform Badge -->
             <div class="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5">
-              <input type="checkbox" data-id="${v.id}" class="video-checkbox w-4 h-4 rounded bg-black/60 border-slate-500 text-rose-500 focus:ring-rose-500 cursor-pointer" checked />
+              <input type="checkbox" data-id="${escapeHtml(v.id)}" class="video-checkbox w-4 h-4 rounded bg-black/60 border-slate-500 text-rose-500 focus:ring-rose-500 cursor-pointer" checked />
               ${platformBadge}
             </div>
 
             <!-- Resolution & Duration -->
             <div class="absolute top-2.5 right-2.5 flex items-center space-x-1.5">
-              <span class="text-[10px] font-bold bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-slate-200 border border-white/10">${v.resolution}</span>
+              <span class="text-[10px] font-bold bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-slate-200 border border-white/10">${escapeHtml(v.resolution)}</span>
             </div>
             <div class="absolute bottom-2.5 right-2.5">
               <span class="text-[10px] font-medium bg-black/70 backdrop-blur px-2 py-0.5 rounded-md text-white">${formatDuration(v.duration)}</span>
@@ -2806,7 +2944,7 @@
             </div>
 
             <!-- Play Preview Overlay Button -->
-            <button onclick="openPreviewModal('${v.id}', false)" class="absolute inset-0 m-auto w-12 h-12 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg transform scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 transition duration-200">
+            <button onclick="openPreviewModal(${jsAttrArg(v.id)}, false)" class="absolute inset-0 m-auto w-12 h-12 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg transform scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 transition duration-200">
               <i data-lucide="play" class="w-5 h-5 ml-0.5 fill-current"></i>
             </button>
           </div>
@@ -2816,10 +2954,10 @@
             <div class="space-y-2">
               <div class="flex items-center space-x-2">
                 <img src="${v.author_avatar ? `/api/proxy-media?url=${encodeURIComponent(v.author_avatar)}` : 'https://placehold.co/100/1e293b/cbd5e1?text=U'}" alt="Avatar" class="w-6 h-6 rounded-full object-cover border border-slate-700" />
-                <span class="text-xs font-medium text-slate-300 truncate">${v.author}</span>
+                <span class="text-xs font-medium text-slate-300 truncate">${escapeHtml(v.author)}</span>
               </div>
-              <h4 class="text-xs font-medium text-slate-100 line-clamp-2 leading-relaxed" title="${v.title}">
-                ${v.title}
+              <h4 class="text-xs font-medium text-slate-100 line-clamp-2 leading-relaxed" title="${escapeHtml(v.title)}">
+                ${escapeHtml(v.title)}
               </h4>
             </div>
 
@@ -2836,13 +2974,13 @@
               </div>
 
               <div class="flex items-center space-x-2">
-                <button onclick="openPreviewModal('${v.id}', false)" class="flex-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 rounded-xl transition flex items-center justify-center gap-1.5">
+                <button onclick="openPreviewModal(${jsAttrArg(v.id)}, false)" class="flex-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 rounded-xl transition flex items-center justify-center gap-1.5">
                   <i data-lucide="eye" class="w-3.5 h-3.5 text-indigo-400"></i>
                   <span>Xem thử</span>
                 </button>
-                <button id="btnDl-${v.id}" onclick="downloadSingle('${v.id}')" class="flex-1 text-xs bg-rose-600 hover:bg-rose-500 text-white py-2 rounded-xl transition flex items-center justify-center gap-1.5 shadow shadow-rose-600/20">
+                <button id="btnDl-${escapeHtml(v.id)}" onclick="downloadSingle(${jsAttrArg(v.id)})" class="flex-1 text-xs bg-rose-600 hover:bg-rose-500 text-white py-2 rounded-xl transition flex items-center justify-center gap-1.5 shadow shadow-rose-600/20">
                   <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                  <span>Tải video</span>
+                  <span data-download-label>Tải vào ${escapeHtml(currentSelectedCollection)}</span>
                 </button>
               </div>
             </div>
@@ -2856,7 +2994,8 @@
         captureFirstFrame(proxyPlay, `imgThumb-${v.id}`);
       });
 
-      lucide.createIcons();
+      updateDownloadLabels();
+      refreshIcons();
     }
 
     function toggleSelectAll() {
@@ -2912,7 +3051,7 @@
           })
         });
         if (res.ok) {
-          showToast(`Bắt đầu tải vào nhóm [${currentSelectedCollection}]!`);
+          showToast(`Bắt đầu tải vào thư mục [${currentSelectedCollection}]!`);
           startTaskPolling();
         } else {
           showToast('Lỗi khi kích hoạt tải video', true);
@@ -2945,7 +3084,7 @@
           })
         });
         if (res.ok) {
-          showToast(`Bắt đầu tải ${selectedIds.length} video vào nhóm [${currentSelectedCollection}]!`);
+          showToast(`Bắt đầu tải ${selectedIds.length} video vào thư mục [${currentSelectedCollection}]!`);
           startTaskPolling();
         } else {
           showToast('Lỗi khi kích hoạt tải', true);
@@ -3008,7 +3147,7 @@
           }
         }
 
-        lucide.createIcons();
+        refreshIcons();
 
         if (!anyActive && Object.keys(tasks).length > 0) {
           clearInterval(pollingInterval);
@@ -3028,24 +3167,32 @@
     async function loadHistoryCount() {
       try {
         const res = await fetch('/api/history');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        const count = (data.videos || []).length;
+        if (!Array.isArray(data.videos)) throw new Error('Invalid history response');
+        historyVideos = data.videos;
+        const count = data.videos.length;
+        if (folderDialog) renderFolderPicker();
         document.getElementById('historyCountBadge').innerText = count;
-      } catch (e) {}
+      } catch (e) { showConnectionError(); }
     }
 
     async function loadHistory() {
       try {
         const res = await fetch('/api/history');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
+        if (!Array.isArray(data.videos)) throw new Error('Invalid history response');
         historyVideos = data.videos || [];
 
-        loadHistoryCount();
+        document.getElementById('connectionError')?.remove();
+        document.getElementById('historyCountBadge').textContent = historyVideos.length;
         renderCollectionFilterPills();
         renderHistoryCards();
       } catch (e) {
         console.error('Lỗi khi tải lịch sử:', e);
-        showToast('Lỗi khi tải lịch sử', true);
+        showConnectionError();
+        showToast('Không tải được lịch sử từ máy chủ', true);
       }
     }
 
@@ -3057,6 +3204,7 @@
       if (historyVideos.length === 0) {
         grid.innerHTML = '';
         emptyState.classList.remove('hidden');
+        renderFolderEmpty(emptyState);
         summary.innerText = '0 video';
         const checkAllHistoryEl = document.getElementById('checkAllHistory');
         if (checkAllHistoryEl) checkAllHistoryEl.checked = false;
@@ -3072,20 +3220,15 @@
         : historyVideos.filter(v => (v.collection || 'Chung') === activeHistoryFilter);
 
       const totalMB = filtered.reduce((acc, v) => acc + (v.size_mb || 0), 0);
-      const filterText = activeHistoryFilter === 'ALL' ? '' : ` (Nhóm: ${activeHistoryFilter})`;
+      const filterText = activeHistoryFilter === 'ALL' ? '' : ` (Thư mục: ${activeHistoryFilter})`;
       summary.innerText = `${filtered.length} video${filterText} • Tổng ${totalMB.toFixed(1)} MB`;
 
       if (filtered.length === 0) {
-        grid.innerHTML = `
-          <div class="col-span-full py-12 text-center space-y-2 text-slate-400">
-            <i data-lucide="folder-open" class="w-8 h-8 mx-auto text-slate-600"></i>
-            <p class="text-xs">Chưa có video nào trong nhóm "${activeHistoryFilter}".</p>
-          </div>
-        `;
+        renderFolderEmpty(grid);
         const checkAllHistoryEl = document.getElementById('checkAllHistory');
         if (checkAllHistoryEl) checkAllHistoryEl.checked = false;
         updateHistorySelectedCount();
-        lucide.createIcons();
+        refreshIcons();
         return;
       }
 
@@ -3108,16 +3251,16 @@
 
             <!-- Checkbox, Platform & Collection Badges -->
             <div class="absolute top-2.5 left-2.5 z-10 flex items-center space-x-1.5">
-              <input type="checkbox" data-rel-path="${encodeURIComponent(v.rel_path)}" onchange="updateHistorySelectedCount()" class="history-checkbox w-4 h-4 rounded bg-black/60 border-slate-500 text-rose-500 focus:ring-rose-500 cursor-pointer" />
+              <input type="checkbox" data-rel-path="${escapeHtml(encodeURIComponent(v.rel_path))}" onchange="updateHistorySelectedCount()" class="history-checkbox w-4 h-4 rounded bg-black/60 border-slate-500 text-rose-500 focus:ring-rose-500 cursor-pointer" />
               ${platformBadge}
               <span class="text-[10px] font-semibold bg-amber-500/90 text-slate-950 px-2 py-0.5 rounded-full flex items-center gap-1 shadow">
                 <i data-lucide="folder" class="w-2.5 h-2.5"></i>
-                ${v.collection || 'Chung'}
+                ${escapeHtml(v.collection || 'Chung')}
               </span>
             </div>
 
             <div class="absolute top-2.5 right-2.5 flex items-center space-x-1.5">
-              <span class="text-[10px] font-bold bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-slate-200 border border-white/10">${v.resolution}</span>
+              <span class="text-[10px] font-bold bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-slate-200 border border-white/10">${escapeHtml(v.resolution)}</span>
             </div>
             <div class="absolute bottom-2.5 right-2.5">
               <span class="text-[10px] font-medium bg-black/70 backdrop-blur px-2 py-0.5 rounded-md text-white">${formatDuration(v.duration)}</span>
@@ -3156,7 +3299,7 @@
             </div>
 
             <!-- Play Overlay -->
-            <button onclick="openPreviewModal('${encodeURIComponent(v.rel_path)}', true)" class="absolute inset-0 m-auto w-12 h-12 rounded-full bg-indigo-600/90 text-white flex items-center justify-center shadow-lg transform scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 transition duration-200">
+            <button onclick="openPreviewModal(${jsAttrArg(encodeURIComponent(v.rel_path))}, true)" class="absolute inset-0 m-auto w-12 h-12 rounded-full bg-indigo-600/90 text-white flex items-center justify-center shadow-lg transform scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 transition duration-200">
               <i data-lucide="play" class="w-5 h-5 ml-0.5 fill-current"></i>
             </button>
           </div>
@@ -3165,38 +3308,41 @@
           <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
             <div class="space-y-1.5">
               <div class="flex items-center justify-between text-xs text-slate-400">
-                <span class="truncate font-medium text-slate-300">${v.author}</span>
+                <span class="truncate font-medium text-slate-300">${escapeHtml(v.author)}</span>
                 <span class="text-[11px] font-mono text-slate-500">${v.size_mb} MB</span>
               </div>
-              <h4 class="text-xs font-medium text-slate-100 line-clamp-2 leading-relaxed" title="${v.title}">
-                ${v.title}
+              <h4 class="text-xs font-medium text-slate-100 line-clamp-2 leading-relaxed" title="${escapeHtml(v.title)}">
+                ${escapeHtml(v.title)}
               </h4>
+              <p class="text-sm text-amber-300 break-words">Thư mục: ${escapeHtml(v.collection || 'Chung')}</p>
+              <button class="rounded-xl border border-amber-500/50 px-3 py-2 text-sm text-amber-200" onclick="openMoveFolder([${jsAttrArg(v.rel_path)}])">Chuyển thư mục</button>
+              ${recentlyMoved.has(v.rel_path) ? '<p class="text-xs text-emerald-300">✓ Vừa chuyển vào đây</p>' : ''}
               <p class="text-[10px] text-slate-500">${v.created_time}</p>
             </div>
 
             <!-- Action Buttons -->
             <div class="pt-2 border-t border-slate-800/80 flex items-center space-x-1.5">
-              <button onclick="openPreviewModal('${encodeURIComponent(v.rel_path)}', true)" class="flex-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-1.5 rounded-xl transition flex items-center justify-center gap-1">
+              <button onclick="openPreviewModal(${jsAttrArg(encodeURIComponent(v.rel_path))}, true)" class="flex-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-1.5 rounded-xl transition flex items-center justify-center gap-1">
                 <i data-lucide="eye" class="w-3.5 h-3.5 text-indigo-400"></i>
                 <span>Xem lại</span>
               </button>
-              <button onclick="openStudioModal('${encodeURIComponent(v.rel_path)}')" class="text-xs bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-xl font-medium transition flex items-center gap-1 shadow-sm" title="Mở Studio Reup: Cắt A-B, Tỉ lệ 9:16 TikTok, Mờ Sub cũ, Khử giọng AI">
+              <button onclick="openStudioModal(${jsAttrArg(encodeURIComponent(v.rel_path))})" class="text-xs bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-xl font-medium transition flex items-center gap-1 shadow-sm" title="Mở Studio Reup: Cắt A-B, Tỉ lệ 9:16 TikTok, Mờ Sub cũ, Khử giọng AI">
                 <i data-lucide="scissors" class="w-3.5 h-3.5 text-amber-400"></i>
                 <span>Studio Reup</span>
               </button>
-              <button onclick="openTranscriptModal('${encodeURIComponent(v.rel_path)}')" class="text-xs ${v.has_transcript ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-purple-950/40 hover:bg-purple-800/50 text-purple-300'} px-2.5 py-1.5 rounded-xl border border-purple-700/40 transition flex items-center gap-1" title="Trích xuất lời thoại & Dịch kịch bản">
+              <button onclick="openTranscriptModal(${jsAttrArg(encodeURIComponent(v.rel_path))})" class="text-xs ${v.has_transcript ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-purple-950/40 hover:bg-purple-800/50 text-purple-300'} px-2.5 py-1.5 rounded-xl border border-purple-700/40 transition flex items-center gap-1" title="Trích xuất lời thoại & Dịch kịch bản">
                 <i data-lucide="subtitles" class="w-3.5 h-3.5"></i>
                 <span class="text-[11px] font-medium hidden sm:inline">Bản thoại</span>
               </button>
-              <button onclick="openHistoryFile('${encodeURIComponent(v.best_video_rel || v.rel_path)}')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 p-2 rounded-xl transition" title="Mở bằng phần mềm trên máy">
+              <button onclick="openHistoryFile(${jsAttrArg(encodeURIComponent(v.best_video_rel || v.rel_path))})" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 p-2 rounded-xl transition" title="Mở bằng phần mềm trên máy">
                 <i data-lucide="external-link" class="w-3.5 h-3.5 text-slate-400"></i>
               </button>
               ${v.has_backup ? `
-                <button onclick="confirmRestoreOriginal('${encodeURIComponent(v.rel_path)}')" class="text-xs bg-amber-950/40 hover:bg-amber-800/60 text-amber-300 p-2 rounded-xl border border-amber-700/40 transition" title="Khôi phục lại video gốc ban đầu (từ file .backup.mp4)">
+                <button onclick="confirmRestoreOriginal(${jsAttrArg(encodeURIComponent(v.rel_path))})" class="text-xs bg-amber-950/40 hover:bg-amber-800/60 text-amber-300 p-2 rounded-xl border border-amber-700/40 transition" title="Khôi phục lại video gốc ban đầu (từ file .backup.mp4)">
                   <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
                 </button>
               ` : ''}
-              <button onclick="confirmDeleteVideo('${encodeURIComponent(v.rel_path)}')" class="text-xs bg-rose-950/40 hover:bg-rose-600/80 text-rose-400 hover:text-white p-2 rounded-xl border border-rose-900/40 transition" title="Xóa video khỏi máy tính">
+              <button onclick="confirmDeleteVideo(${jsAttrArg(encodeURIComponent(v.rel_path))})" class="text-xs bg-rose-950/40 hover:bg-rose-600/80 text-rose-400 hover:text-white p-2 rounded-xl border border-rose-900/40 transition" title="Xóa video khỏi máy tính">
                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
               </button>
             </div>
@@ -3211,7 +3357,7 @@
       if (checkAllHistoryEl) checkAllHistoryEl.checked = false;
       updateHistorySelectedCount();
 
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function toggleSelectAllHistory() {
@@ -3230,6 +3376,7 @@
       if (countSpan) {
         countSpan.innerText = `Đã chọn ${count} video`;
       }
+      document.getElementById('btnMoveSelected').disabled = count === 0;
       const btnDelete = document.getElementById('btnDeleteSelectedHistory');
       const btnText = document.getElementById('btnDeleteSelectedHistoryText');
       if (btnDelete) {
@@ -3272,7 +3419,12 @@
       filesToDelete = [path];
       document.getElementById('delModalTitle').innerText = 'Xác nhận xóa video';
       document.getElementById('delModalMsg').innerText = 'Bạn có chắc chắn muốn xóa vĩnh viễn video này khỏi máy tính?';
-      document.getElementById('delFileListContainer').innerHTML = `<div class="truncate font-semibold text-rose-400">${path}</div>`;
+      const fileList = document.getElementById('delFileListContainer');
+      fileList.replaceChildren();
+      const pathItem = document.createElement('div');
+      pathItem.className = 'truncate font-semibold text-rose-400';
+      pathItem.textContent = path;
+      fileList.appendChild(pathItem);
       document.getElementById('btnConfirmDeleteText').innerText = 'Xóa vĩnh viễn';
       document.getElementById('btnConfirmDelete').onclick = executeDeleteFiles;
       document.getElementById('deleteModal').classList.remove('hidden');
@@ -3288,11 +3440,14 @@
       document.getElementById('delModalTitle').innerText = `Xác nhận xóa ${filesToDelete.length} video đã chọn`;
       document.getElementById('delModalMsg').innerText = `Bạn có chắc chắn muốn xóa vĩnh viễn ${filesToDelete.length} video đã chọn khỏi máy tính?`;
       
-      let html = '';
+      const fileList = document.getElementById('delFileListContainer');
+      fileList.replaceChildren();
       filesToDelete.forEach(f => {
-        html += `<div class="truncate">• ${f}</div>`;
+        const item = document.createElement('div');
+        item.className = 'truncate';
+        item.textContent = `• ${f}`;
+        fileList.appendChild(item);
       });
-      document.getElementById('delFileListContainer').innerHTML = html;
       document.getElementById('btnConfirmDeleteText').innerText = `Xóa vĩnh viễn (${filesToDelete.length} video)`;
       document.getElementById('btnConfirmDelete').onclick = executeDeleteFiles;
       document.getElementById('deleteModal').classList.remove('hidden');
@@ -3657,23 +3812,30 @@
             progBar.style.width = `${bData.progress}%`;
 
             if (bData.logs && bData.logs.length > 0) {
-              logBox.innerHTML = bData.logs.map(l => `<div class="truncate">${l}</div>`).join('');
+              const logFragment = document.createDocumentFragment();
+              bData.logs.forEach(line => {
+                const row = document.createElement('div');
+                row.className = 'truncate';
+                row.textContent = line;
+                logFragment.appendChild(row);
+              });
+              logBox.replaceChildren(logFragment);
               logBox.scrollTop = logBox.scrollHeight;
             }
 
-            if (bData.status === 'completed') {
+            if (['completed', 'partial', 'error'].includes(bData.status)) {
               clearInterval(batchPollInterval);
-              statusText.innerText = '✓ Đã hoàn thành toàn bộ danh sách!';
+              const succeeded = (bData.completed || []).length;
+              const failed = (bData.failed || []).length;
+              statusText.innerText = bData.status === 'completed'
+                ? `✓ Hoàn tất ${succeeded}/${bData.total} video`
+                : `${bData.status === 'partial' ? 'Đã xử lý một phần' : 'Không có video hoàn tất'}: ${succeeded} thành công, ${failed} thất bại`;
               pctText.innerText = '100%';
               progBar.style.width = '100%';
               btn.disabled = false;
-              showToast('Xử lý hàng loạt hoàn tất xuất sắc!');
+              if (bData.status === 'completed') showToast(`Đã xử lý ${succeeded} video`);
+              else showToast(`Batch xong: ${succeeded} thành công, ${failed} thất bại`, true);
               await loadHistory();
-            } else if (bData.status === 'error') {
-              clearInterval(batchPollInterval);
-              statusText.innerText = `Lỗi hàng loạt: ${bData.error}`;
-              btn.disabled = false;
-              showToast(`Lỗi hàng loạt: ${bData.error}`, true);
             }
           } catch (pe) {
             console.error(pe);
@@ -3705,7 +3867,7 @@
       badgeText.innerText = text;
       badgeIcon.setAttribute('data-lucide', isForward ? 'rotate-cw' : 'rotate-ccw');
       badgeIcon.className = `w-5 h-5 ${isForward ? 'text-rose-400' : 'text-indigo-400'}`;
-      lucide.createIcons();
+      refreshIcons();
 
       badge.classList.remove('opacity-0');
       badge.classList.add('opacity-100');
@@ -3744,7 +3906,7 @@
         icon.setAttribute('data-lucide', 'volume-2');
         slider.value = player.volume || 1;
       }
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function toggleFullscreen() {
@@ -3770,13 +3932,13 @@
     player.addEventListener('play', () => {
       playPauseIcon.setAttribute('data-lucide', 'pause');
       centerPlayIcon.setAttribute('data-lucide', 'pause');
-      lucide.createIcons();
+      refreshIcons();
     });
 
     player.addEventListener('pause', () => {
       playPauseIcon.setAttribute('data-lucide', 'play');
       centerPlayIcon.setAttribute('data-lucide', 'play');
-      lucide.createIcons();
+      refreshIcons();
     });
 
     player.addEventListener('loadedmetadata', () => {
@@ -3814,7 +3976,7 @@
       player.muted = player.volume === 0;
       const icon = document.getElementById('volumeIcon');
       icon.setAttribute('data-lucide', player.muted ? 'volume-x' : 'volume-2');
-      lucide.createIcons();
+      refreshIcons();
     });
 
     // ----------------------------------------------------
@@ -3874,7 +4036,7 @@
         tab4Badge.classList.toggle('hidden', !item?.has_dubbed);
       }
 
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function closeTranscriptModal() {
@@ -3940,7 +4102,7 @@
         initCropEditor();
       }
 
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function renderStep1Existing(data) {
@@ -3995,7 +4157,7 @@
       progressBar.style.width = '5%';
       progressPct.innerText = '5%';
       progressText.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Đang nạp mô hình Faster-Whisper...</span>';
-      lucide.createIcons();
+      refreshIcons();
 
       try {
         const res = await fetch('/api/transcribe', {
@@ -4018,7 +4180,7 @@
           text.innerText = 'Bắt đầu trích xuất lời thoại';
           icon.setAttribute('data-lucide', 'mic');
           icon.classList.remove('animate-spin');
-          lucide.createIcons();
+          refreshIcons();
         }
       } catch (e) {
         showToast('Lỗi kết nối server', true);
@@ -4026,7 +4188,7 @@
         text.innerText = 'Bắt đầu trích xuất lời thoại';
         icon.setAttribute('data-lucide', 'mic');
         icon.classList.remove('animate-spin');
-        lucide.createIcons();
+        refreshIcons();
       }
     }
 
@@ -4050,7 +4212,7 @@
           progressBar.style.width = `${pct}%`;
           progressPct.innerText = `${Math.round(pct)}%`;
           progressText.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>${task.progress_text || 'Đang nhận diện âm thanh...'}</span>`;
-          lucide.createIcons();
+          refreshIcons();
 
           if (task.status === 'completed') {
             clearInterval(transcribePollTimer);
@@ -4062,7 +4224,7 @@
             progressBar.style.width = '100%';
             progressPct.innerText = '100%';
             progressText.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i><span>Hoàn tất trích xuất ${task.segments?.length || 0} câu thoại!</span>`;
-            lucide.createIcons();
+            refreshIcons();
 
             showToast(`Trích xuất thành công ${task.segments?.length || 0} câu thoại!`);
             await loadHistory();
@@ -4089,7 +4251,7 @@
             icon.classList.remove('animate-spin');
             showToast(task.error || 'Lỗi khi trích xuất', true);
             progressText.innerHTML = `<i data-lucide="alert-circle" class="w-3.5 h-3.5 text-rose-400"></i><span>Lỗi: ${task.error || 'Thất bại'}</span>`;
-            lucide.createIcons();
+            refreshIcons();
           }
         } catch (e) {
           console.error('Polling transcribe error:', e);
@@ -4142,7 +4304,7 @@
         </td>
       `;
       tbody.appendChild(tr);
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function getCharacterMapFromForm() {
@@ -4188,7 +4350,7 @@
       text.innerText = `Đang quét lời thoại (${engineLabel})...`;
       icon.setAttribute('data-lucide', 'loader-2');
       icon.classList.add('animate-spin');
-      lucide.createIcons();
+      refreshIcons();
 
       try {
         const item = historyVideos.find(h => h.rel_path === currentTranscriptRelPath);
@@ -4217,7 +4379,7 @@
         text.innerText = 'AI Quét & Lập Bảng Xưng Hô';
         icon.setAttribute('data-lucide', 'wand-2');
         icon.classList.remove('animate-spin');
-        lucide.createIcons();
+        refreshIcons();
       }
     }
 
@@ -4264,7 +4426,7 @@
         progressPct.innerText = '0%';
         progressLabel.innerText = `Bắt đầu dịch 0 / ${allSegs.length} câu...`;
       }
-      lucide.createIcons();
+      refreshIcons();
 
       const chunkSize = 15;
       let failedChunks = 0;
@@ -4361,7 +4523,7 @@
         onQuickAiEngineChange();
         icon.setAttribute('data-lucide', 'languages');
         icon.classList.remove('animate-spin');
-        lucide.createIcons();
+        refreshIcons();
       }
     }
 
@@ -4382,7 +4544,7 @@
           </div>
         `;
         countBadge.innerText = '0 câu thoại';
-        lucide.createIcons();
+        refreshIcons();
         return;
       }
 
@@ -4451,7 +4613,7 @@
         container.appendChild(row);
       });
 
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function seekSyncPlayer(seconds) {
@@ -4601,7 +4763,7 @@
         if (multiSec) multiSec.classList.remove('hidden');
         renderDubCharactersList();
       }
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function updateDubVolLabels() {
@@ -4765,7 +4927,7 @@
       if (activeDubMode === 'multi') {
         renderDubCharactersList();
       }
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function switchDubPreviewVideo(mode) {
@@ -4838,7 +5000,7 @@
             <i data-lucide="play" class="w-3 h-3 fill-current"></i>
             <span>Nghe thử</span>
           `;
-          lucide.createIcons();
+          refreshIcons();
         }
       }
     }
@@ -4863,6 +5025,7 @@
       const voice = document.getElementById('dubVoiceSelect')?.value || 'vi-VN-HoaiMyNeural';
       const voiceVol = (parseFloat(document.getElementById('dubVoiceVolSlider')?.value || 120)) / 100.0;
       const bgVol = (parseFloat(document.getElementById('dubBgVolSlider')?.value || 15)) / 100.0;
+      const cleanBgm = document.getElementById('dubCleanBgmCheck')?.checked || false;
       const burnSub = document.getElementById('dubBurnSubCheck')?.checked || false;
       const subLang = document.getElementById('dubSubLangSelect')?.value || 'vi';
       const subType = document.getElementById('dubSubTypeSelect')?.value || 'hardsub';
@@ -4897,6 +5060,7 @@
             character_voices: character_voices,
             bg_volume: bgVol,
             voice_volume: voiceVol,
+            clean_bgm: cleanBgm,
             burn_sub: burnSub,
             sub_lang: subLang,
             sub_type: subType,
@@ -5091,7 +5255,7 @@
         msg.innerHTML = `Bạn có chắc muốn áp dụng file <span class="font-mono text-emerald-400 font-semibold">${repFilename}</span> để thay thế file video gốc?`;
       }
       if (modal) modal.classList.remove('hidden');
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function closeReplaceConfirmModal() {
@@ -5254,7 +5418,7 @@
         acc.classList.add('hidden');
         if (chev) chev.classList.remove('rotate-180');
       }
-      if (window.lucide) lucide.createIcons();
+      if (window.lucide) refreshIcons();
     }
 
     function updateSubStyleUI() {
@@ -5451,7 +5615,7 @@
       updateSubStyleUI();
 
       modal.classList.remove('hidden');
-      lucide.createIcons();
+      refreshIcons();
     }
 
     function closeSubtitleExportModal() {
@@ -5917,7 +6081,7 @@
 
       // UI — show progress
       const btn = document.getElementById('btnStartCropTrim');
-      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Đang xử lý...</span>'; lucide.createIcons(); }
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Đang xử lý...</span>'; refreshIcons(); }
       document.getElementById('cropTrimProgressBox')?.classList.remove('hidden');
       document.getElementById('cropTrimResultCard')?.classList.add('hidden');
 
@@ -5957,7 +6121,7 @@
           if (bar) bar.style.width = pct + '%';
           if (pctEl) pctEl.textContent = pct + '%';
           if (txt) txt.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>${d.progress_text || 'Đang xử lý...'}</span>`;
-          lucide.createIcons();
+          refreshIcons();
 
           if (d.status === 'completed') {
             clearInterval(cropTrimPollTimer);
@@ -5987,7 +6151,7 @@
       if (btn) {
         btn.disabled = false;
         btn.innerHTML = '<i data-lucide="scissors" class="w-4 h-4"></i><span>Bắt đầu xử lý video</span>';
-        lucide.createIcons();
+        refreshIcons();
       }
     }
 
@@ -6046,8 +6210,8 @@
     });
 
     // App Initialization
-    loadConfig();
-    loadCollections();
+    initFolderUI();
+    loadConfig().then(loadCollections);
     restoreParsedVideos();
     loadHistoryCount();
     loadSavedSubStyle();
