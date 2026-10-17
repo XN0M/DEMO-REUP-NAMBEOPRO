@@ -185,13 +185,17 @@ class PersonalVoices(unittest.TestCase):
         engine.directory=Path(self.temp.name)/'engine'
         engine.gpu_release=None
         engine.start=Mock()
-        engine.request=Mock(return_value=wav())
+        engine.request=Mock(side_effect=[wav(.2),wav(.3),wav(.4)])
         first=engine.synthesize('Xin chào',identity)
         self.library.rename(voice['id'],'Tên mới')
         self.assertEqual(engine.synthesize('Xin chào',identity),first)
         engine.request.assert_called_once()
-        engine.synthesize('Câu mới',identity)
+        refreshed=engine.synthesize('Xin chào',identity,refresh=True)
+        self.assertNotEqual(refreshed,first)
+        self.assertEqual(engine.synthesize('Xin chào',identity),refreshed)
         self.assertEqual(engine.request.call_count,2)
+        engine.synthesize('Câu mới',identity)
+        self.assertEqual(engine.request.call_count,3)
 
     def test_legacy_real_mux_and_long_voice_extends_video(self):
         from core import studio_media as media

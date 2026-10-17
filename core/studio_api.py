@@ -24,6 +24,7 @@ class Job(BaseModel):
     segment_ids: list[str] | None = None
     at: float = Field(default=0, ge=0, allow_inf_nan=False)
     skip_errors: bool = False
+    refresh: bool = False
 
 class Transcribe(Job):
     model_size: str = Field(default='base', pattern='^(tiny|base|small)$')
@@ -62,7 +63,8 @@ def attach(host, database=None):
         return call(service.save, req.filepath, req.expected_revision, req.project, req.restore_revision)
 
     def launch(kind, req):
-        return call(service.launch, kind, req.filepath, req.revision, req.segment_ids, at=req.at, skip_errors=req.skip_errors)
+        return call(service.launch, kind, req.filepath, req.revision, req.segment_ids,
+                    at=req.at, skip_errors=req.skip_errors, refresh=req.refresh if kind == 'tts' else False)
 
     @router.post('/tts')
     def tts(req: Job):

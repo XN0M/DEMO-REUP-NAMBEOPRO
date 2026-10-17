@@ -24,7 +24,7 @@ STYLE = dict(font='DejaVu Sans', size=42, bold=True, color='#FFFFFF', outline_co
 DEFAULT = dict(style=STYLE, voice=VOICE, speakers={}, clone_consent=False,
                mix={'voice_volume': 1.0, 'bg_volume': 0.15, 'ducking': True},
                render={'start': 0, 'end': None, 'speed': 1, 'aspect': 'original', 'dubbed': False, 'subtitles': True},
-               reading_speed=20, timing={'max_speed': 1.65, 'max_overlap': 1.0}, caption_hold=12)
+               reading_speed=20, timing={'max_speed': 1.65, 'max_overlap': .5}, caption_hold=12)
 
 class Conflict(ValueError):
     pass
@@ -276,7 +276,7 @@ def audio_key(data, seg, source_fingerprint=''):
 
 def timing_key(data):
     cfg = data['studio_config']
-    payload = {'version': 2, 'speed': cfg['render']['speed'], 'timing': cfg['timing'],
+    payload = {'version': 5, 'speed': cfg['render']['speed'], 'timing': cfg['timing'],
                'segments': [(s['id'], s['start'], s['end'], bool(dub_text(s, data.get('detected_language'))))
                             for s in sorted(data['segments'], key=lambda s: (s['start'], s['end'], s['id']))]}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()

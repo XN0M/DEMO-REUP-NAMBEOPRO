@@ -17,6 +17,18 @@ class Timing(unittest.TestCase):
         self.assertEqual(plan['a']['speed'], 1)
         self.assertEqual(plan['b']['play_start'], 4)
 
+    def test_speeds_up_before_spending_a_full_second_of_overlap(self):
+        cues = [dict(id='a', start=0, end=2, duration=2.4),
+                dict(id='b', start=2, end=4, duration=2.4)]
+        plan = schedule(cues, max_overlap=1, video_end=5)
+        self.assertAlmostEqual(plan['a']['speed'], 1.2)
+        self.assertAlmostEqual(plan['b']['overlap'], 0)
+        crowded = [dict(id='a', start=0, end=2, duration=3),
+                   dict(id='b', start=2, end=4, duration=3)]
+        plan = schedule(crowded, max_overlap=1, video_end=5)
+        self.assertLessEqual(plan['b']['overlap'], .200001)
+        self.assertGreater(plan['a']['speed'], 1.3)
+
     def test_dense_dialogue_limits_overlap_and_never_drops_words(self):
         cues = [dict(id=str(i), start=i*.15, end=i*.15+.1, duration=4) for i in range(5)]
         for video_speed in (.5, 1, 2):
@@ -35,9 +47,10 @@ class Timing(unittest.TestCase):
         config=dict(render=dict(dubbed=False,speed=1),caption_hold=12)
         self.assertEqual(captions(segments,config)['a'],(0,12))
         config['render']['dubbed']=True
-        entries={'a':dict(status='ready',play_start=2,play_end=22),
-                 'b':dict(status='ready',play_start=10,play_end=11)}
-        self.assertEqual(captions(segments,config,entries)['a'],(2,10))
+        entries={'a':dict(status='ready',play_start=2,play_end=12),
+                 'b':dict(status='ready',play_start=10,play_end=13)}
+        self.assertEqual(captions(segments,config,entries)['a'],(2,11))
+        self.assertEqual(captions(segments,config,entries)['b'],(11,13))
 
     def test_no_dialogue_cue_does_not_create_or_clip_captions(self):
         segments=[dict(id='a',start=0,end=8),dict(id='silent',start=2,end=3,no_dialogue=True),

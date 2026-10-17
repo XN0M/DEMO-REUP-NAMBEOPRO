@@ -358,7 +358,7 @@ class VieneuRuntime:
             return self.request('GET', '/voices', timeout=10)['voices']
         return []
 
-    def synthesize(self, text, voice, cancelled=lambda: False):
+    def synthesize(self, text, voice, cancelled=lambda: False, refresh=False):
         text = text.strip()
         if not text or len(text) > 10000:
             raise TTSError('Lời đọc cần từ 1 đến 10000 ký tự')
@@ -378,11 +378,11 @@ class VieneuRuntime:
                     except (wave.Error, EOFError):
                         pass
                 return None
-            result = cached()
+            result = None if refresh else cached()
             if result:
                 return result
             with gpu_slot(cancelled):
-                result = cached()
+                result = None if refresh else cached()
                 if result:
                     return result
                 if self.gpu_release:

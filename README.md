@@ -14,6 +14,8 @@ Khung **Video gốc · chỉnh sửa** luôn phát âm thanh gốc để chỉnh
 
 Nếu một mục nhận diện thực ra không có lời nói (ví dụ chữ trên hình hoặc nhận diện nhầm), đánh dấu **Không có thoại** ngay trên dòng câu đó. Mục vẫn nằm trong bản thoại để kiểm tra và có thể bật lại, nhưng không cần dịch/tạo giọng, không hiện phụ đề và không chặn xuất. Có thể chọn nhiều câu rồi dùng **Đánh dấu không có thoại**.
 
+Studio căn tiếng theo thời lượng giọng thực tế, ưu tiên tăng tốc vừa phải trước khi cho hai câu chồng nhau. Mức chồng thông thường được giữ quanh 0,2 giây; mặc định giới hạn tối đa 0,5 giây, có thể chỉnh trong **Xuất video**. Khi hai câu vẫn phải chồng tiếng, phụ đề chuyển ở giữa phần giao nhau để không biến mất quá sớm.
+
 ---
 
 ## 📂 Cấu Trúc Mã Nguồn (Architecture Overview)
@@ -180,6 +182,12 @@ Không tự đổi sang giọng hay provider khác khi gặp lỗi. Cache phụ 
 VieNeu và Edge ở luồng nhanh/batch dùng cùng lịch tăng tốc tối đa 1,65×;
 câu dài giữ đủ lời và kéo dài hình cuối nếu cần. Cơ chế giảm nền/tách giọng
 hiện có vẫn được sử dụng.
+Âm thanh lời nói được căn tốc độ bằng bộ lọc Rubber Band có sẵn trong FFmpeg,
+giữ cao độ và rõ âm tiết hơn ở những câu phải nói nhanh.
+Trong Studio, mỗi câu có **Lời đọc riêng** để sửa cách phát âm tên riêng mà
+không đổi phụ đề. Nút **Tạo lại cách đọc** sinh bản TTS mới cho câu đã chọn,
+kể cả khi nội dung và giọng chưa đổi; các câu sau được căn lại theo thời lượng
+mới. Thử vài preset VieNeu để chọn chất giọng phù hợp trước khi tạo cả video.
 
 API bổ sung: `/api/tts/status`, `/install`, `/device`, `/log` và
 `/voices/custom` (GET/POST), `/voices/custom/{id}` (PATCH/DELETE),

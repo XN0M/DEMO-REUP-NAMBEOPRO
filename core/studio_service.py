@@ -1,6 +1,7 @@
 """Persistent Studio jobs and incremental TTS. Credentials stay outside snapshots."""
 import asyncio
 import copy
+import hashlib
 import json
 import os
 import sqlite3
@@ -136,11 +137,14 @@ class StudioService:
                 continue
             key = store.audio_key(data, seg, fingerprint)
             raw = Path(self.check(cache / (key + '.wav')))
-            name = f'audio/{key}-{timing_key[:16]}.wav'
+            cue_key = hashlib.sha256(seg['id'].encode('utf-8')).hexdigest()[:16]
+            name = f'audio/{key}-{cue_key}-{timing_key[:16]}.wav'
             target = Path(self.check(assets / name))
             old = manifest.get(seg['id'], {})
             if (old.get('key') == key and old.get('timing_key') == timing_key
-                    and old.get('status') == 'ready' and target.exists()):
+                    and old.get('status') == 'ready' and target.exists()
+                    and all(abs(float(old.get(field, -1)) - cue[field]) < .001
+                            for field in ('play_start', 'play_end', 'speed'))):
                 continue
             staged = target.with_name(target.stem + '.tmp.wav')
             try:
@@ -369,6 +373,7 @@ class StudioService:
         manifest = self.manifest(video)
         selected = [s for s in data['segments'] if s['id'] in job['segment_ids']]
         blocked_providers = {}
+        refresh = job['options'].get('refresh') is True
         async def sentence(seg):
             while not self.tts_slots.acquire(blocking=False):
                 if event.is_set():
@@ -384,7 +389,7 @@ class StudioService:
                 if not text:
                     raise ValueError('Câu chưa có lời đọc/bản dịch')
                 voice = store.voice_for(data, seg)
-                if not raw.exists():
+                if refresh or not raw.exists():
                     if voice['provider'] in blocked_providers:
                         raise blocked_providers[voice['provider']]
                     cfg = self.host.load_app_config()
@@ -401,7 +406,8 @@ class StudioService:
                     elif voice['provider'] == 'omnivoice':
                         task = self.host.dubber.synthesize_omnivoice(text, str(reference))
                     elif voice['provider'] == 'vieneu':
-                        task = self.host.dubber.synthesize_sentence(text, voice['voice'], provider='vieneu', cancelled=event.is_set)
+                        task = self.host.dubber.synthesize_sentence(text, voice['voice'], provider='vieneu',
+                                                                   cancelled=event.is_set, refresh=refresh)
                     else:
                         raise ValueError('Provider TTS không hợp lệ')
                     pending = asyncio.create_task(task)
@@ -430,6 +436,10 @@ class StudioService:
                             raise ValueError('Audio trống')
                     os.replace(staged, raw)
                     encoded.unlink(missing_ok=True)
+                    if refresh:
+                        with store.LOCK:
+                            manifest[seg['id']] = {**entry, 'status': 'needs_alignment'}
+                            store.atomic_json(assets / 'audio.json', manifest)
                 if event.is_set():
                     raise media.Cancelled()
                 job['completed'].append(seg['id'])

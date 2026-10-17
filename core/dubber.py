@@ -12,6 +12,7 @@ import httpx
 import imageio_ffmpeg
 from core.vocal_remover import VocalRemover
 from core.tts_runtime import runtime as vieneu_runtime, library as voice_library, GPU_LOCK, TTSError
+from core.studio_media import speech_tempo
 
 try:
     import audioop
@@ -281,8 +282,8 @@ class DouyinDubber:
                 return _generate_unlocked()
         return await loop.run_in_executor(None, _generate)
 
-    async def synthesize_vieneu(self, text: str, voice: str, cancelled=lambda: False) -> bytes:
-        return await asyncio.to_thread(vieneu_runtime.synthesize, text, voice, cancelled)
+    async def synthesize_vieneu(self, text: str, voice: str, cancelled=lambda: False, refresh=False) -> bytes:
+        return await asyncio.to_thread(vieneu_runtime.synthesize, text, voice, cancelled, refresh)
 
     async def synthesize_sentence(
         self,
@@ -292,7 +293,8 @@ class DouyinDubber:
         api_key: str = "",
         base_url: str = "",
         ref_audio: str = None,
-        cancelled=lambda: False
+        cancelled=lambda: False,
+        refresh=False
     ) -> bytes:
         """Synthesize a single sentence with auto provider detection."""
         text = text.strip()
@@ -300,7 +302,7 @@ class DouyinDubber:
             return b""
 
         if voice.startswith('vieneu:') or provider == 'vieneu':
-            return await self.synthesize_vieneu(text, voice, cancelled)
+            return await self.synthesize_vieneu(text, voice, cancelled, refresh)
         if provider == "omnivoice" or voice == "omnivoice":
             return await self.synthesize_omnivoice(text, ref_audio)
         elif voice in {v['id'] for v in VOICE_CATALOG if v['provider'] == 'openai'}:
@@ -328,24 +330,12 @@ class DouyinDubber:
             raise RuntimeError(f"Lỗi chuyển đổi MP3 sang WAV: {res.stderr.decode('utf-8', errors='ignore')}")
 
     def _stretch_wav(self, input_wav: str, output_wav: str, speed_factor: float):
-        """Speed up or slow down WAV file using FFmpeg atempo filter."""
+        """Retiming speech with the bundled FFmpeg's Rubber Band filter."""
         ffmpeg_exe = self.get_ffmpeg_exe()
-        # atempo accepts 0.5 to 2.0. If outside, chain filters.
-        filters = []
-        cur_speed = speed_factor
-        while cur_speed > 2.0:
-            filters.append("atempo=2.0")
-            cur_speed /= 2.0
-        while cur_speed < 0.5:
-            filters.append("atempo=0.5")
-            cur_speed /= 0.5
-        filters.append(f"atempo={cur_speed:.4f}")
-        filter_str = ",".join(filters)
-
         cmd = [
             ffmpeg_exe, "-y",
             "-i", input_wav,
-            "-filter:a", filter_str,
+            "-filter:a", speech_tempo(speed_factor),
             "-ar", str(self.sample_rate),
             "-ac", str(self.channels),
             "-sample_fmt", "s16",

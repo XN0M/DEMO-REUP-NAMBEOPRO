@@ -93,7 +93,7 @@ uvicorn.run(server.app,host='127.0.0.1',port=int(sys.argv[2]),log_level='warning
                 page.screenshot(path=str(output/'ui-studio.png'),full_page=True)
                 page.locator('.ns').get_by_role('button',name='Tiếp tục: Xuất video').click()
                 expect(page.locator('.ns').get_by_label('Tốc độ giọng tối đa')).to_have_value('1.65')
-                expect(page.locator('.ns').get_by_label('Chồng tiếng tối đa (giây)')).to_have_value('1')
+                expect(page.locator('.ns').get_by_label('Chồng tiếng tối đa (giây)')).to_have_value('0.5')
                 expect(page.locator('.ns').get_by_label('Tự ẩn phụ đề sau (giây)')).to_have_value('12')
                 page.locator('.ns').get_by_label('Âm thanh').select_option('dubbed')
                 expect(page.locator('.ns .stepActions')).to_contain_text('1 câu chưa có lời đọc tiếng Việt')

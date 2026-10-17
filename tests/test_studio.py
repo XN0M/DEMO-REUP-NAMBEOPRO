@@ -239,6 +239,40 @@ class Studio(unittest.TestCase):
             self.assertEqual(result['status'],'cancelled')
         self.assertFalse((store.paths(self.video)[2]/'audio.json').exists())
 
+    def test_refresh_voice_replaces_raw_audio_and_realigns_following_cue(self):
+        data=self.save(self.project()['project'])
+        first,second=[s['id'] for s in data['segments']]
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(side_effect=[sound(.4),sound(.4)])):
+            self.assertEqual(self.job('tts',data)['status'],'completed')
+        assets=store.paths(self.video)[2]
+        before=self.svc.manifest(self.video)
+        raw=assets/'audio'/(store.audio_key(data,data['segments'][0],self.svc.fingerprint(self.video))+'.wav')
+        old_raw=raw.read_bytes()
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(4))) as synth:
+            result=self.job('tts',data,segment_ids=[first],refresh=True)
+        self.assertEqual(result['status'],'completed',result)
+        synth.assert_awaited_once()
+        self.assertNotEqual(raw.read_bytes(),old_raw)
+        after=self.svc.manifest(self.video)
+        self.assertEqual(self.project()['audio'][first]['status'],'ready')
+        self.assertGreater(after[second]['play_start'],before[second]['play_start'])
+        self.assertGreater(after[first]['play_end'],before[first]['play_end'])
+
+    def test_identical_words_have_distinct_aligned_audio_for_each_cue(self):
+        data=self.project()['project']
+        data['segments'][1]['vietnamese']=data['segments'][0]['vietnamese']
+        data=self.save(data)
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(3))):
+            self.assertEqual(self.job('tts',data)['status'],'completed')
+        entries=self.svc.manifest(self.video)
+        first,second=(entries[s['id']] for s in data['segments'])
+        self.assertEqual(first['key'],second['key'])
+        self.assertNotEqual(first['aligned'],second['aligned'])
+        for entry in (first,second):
+            with wave.open(str(store.paths(self.video)[2]/entry['aligned'])) as audio:
+                duration=audio.getnframes()/audio.getframerate()
+            self.assertAlmostEqual(duration,entry['play_end']-entry['play_start'],delta=.05)
+
     def test_recovery_and_revision_snapshot(self):
         self.svc.recover()
         self.svc.update(dict(id='interrupted',status='processing',snapshot={},filepath='sample.mp4'))

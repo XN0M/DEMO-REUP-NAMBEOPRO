@@ -135,12 +135,20 @@ def atempo(speed):
         filters.append('atempo=0.5'); speed *= 2
     return ','.join(filters + [f'atempo={speed:.8f}'])
 
+def speech_tempo(speed):
+    """Keep short spoken cues intelligible when their timing is compressed."""
+    if abs(speed - 1) < .001:
+        return 'anull'
+    return (f'rubberband=tempo={speed:.8f}:pitch=1:transients=smooth:'
+            'detector=compound:phase=laminar:window=short')
+
+
 def align_audio(raw, output, speed, cancelled):
     with wave.open(str(raw), 'rb') as audio:
         duration = audio.getnframes() / audio.getframerate()
     if duration <= 0:
         raise ValueError('Audio trống')
-    run(['-i', raw, '-af', atempo(speed), '-ac', '1', '-ar', '24000', '-c:a', 'pcm_s16le', output], cancelled)
+    run(['-i', raw, '-af', speech_tempo(speed), '-ac', '1', '-ar', '24000', '-c:a', 'pcm_s16le', output], cancelled)
     with wave.open(str(output), 'rb') as aligned:
         fitted = aligned.getnframes() / aligned.getframerate()
     return {'status': 'ready', 'duration': duration, 'aligned_duration': fitted, 'tempo_factor': speed}
@@ -241,7 +249,7 @@ def render(video, data, output, work, cancelled, voice_track=None, preview_at=No
                 filters.append('[bg][voice]amix=inputs=2:duration=longest:normalize=0[mix]')
         else:
             filters.append('[voice]anull[mix]')
-        filters.append(f'[mix]atrim=start={start}:end={end+tail},asetpts=PTS-STARTPTS,{atempo(speed)},alimiter=limit=0.95[a]')
+        filters.append(f'[mix]atrim=start={start}:end={end+tail},asetpts=PTS-STARTPTS,{speech_tempo(speed)},alimiter=limit=0.95[a]')
         audio_map = ['-map', '[a]', '-c:a', 'aac']
     elif has_audio(video):
         filters.append(f'[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS,{atempo(speed)}[a]')
