@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -93,11 +94,31 @@ uvicorn.run(server.app,host='127.0.0.1',port=int(sys.argv[2]),log_level='warning
                 expect(page.locator('.ns').get_by_label('Tốc độ giọng tối đa')).to_have_value('1.65')
                 expect(page.locator('.ns').get_by_label('Chồng tiếng tối đa (giây)')).to_have_value('1')
                 expect(page.locator('.ns').get_by_label('Tự ẩn phụ đề sau (giây)')).to_have_value('12')
+                page.locator('.ns').get_by_label('Âm thanh').select_option('dubbed')
+                page.locator('.ns .stepActions').get_by_role('button',name='Render thử 5 giây').click()
+                expect(page.locator('.ns .job')).to_contain_text('Render thử · Hoàn tất',timeout=60000)
+                expect(page.locator('.ns .renderedStage')).to_be_visible()
+                expect(page.locator('.ns .stage').first).to_be_hidden()
+                expect(page.locator('.ns .renderedStage video')).to_have_attribute('src',re.compile('/api/studio/asset'))
+                expect(page.locator('.ns .job').get_by_role('link',name='Tải bản thử 5 giây')).to_have_attribute('download','nambeo-render-thu.mp4')
+                page.locator('.ns').get_by_role('button',name='Video gốc · chỉnh sửa').click()
+                expect(page.locator('.ns .renderedStage')).to_be_hidden()
+                page.locator('.ns').get_by_role('button',name='Bản render thử · có tiếng').click()
+                expect(page.locator('.ns .renderedStage')).to_be_visible()
+                page.locator('.ns .stepActions').get_by_role('button',name='Xuất video có lồng tiếng').click()
+                expect(page.locator('.ns .job')).to_contain_text('Xuất video · Hoàn tất',timeout=60000)
+                expect(page.locator('.ns').get_by_role('button',name='Video đã xuất · có tiếng')).to_have_attribute('aria-pressed','true')
+                expect(page.locator('.ns .job').get_by_role('link',name='Tải video đã xuất')).to_have_attribute('download','nambeo-long-tieng.mp4')
+                assets=store.paths(video)[2]
+                assert media.has_audio(next(assets.glob('preview-r*.mp4')))
+                assert media.has_audio(next(assets.glob('export-r*.mp4')))
+                page.evaluate("window.openSubtitleStudio('sample.mp4','export')")
+                expect(page.locator('.ns .renderedStage')).to_be_visible()
                 assert page.locator('#batchVoiceSelect option').evaluate_all("opts=>opts.some(o=>o.value.startsWith('vieneu:custom:'))")
                 assert page.locator('#dubVoiceSelect option').evaluate_all("opts=>opts.some(o=>o.value.startsWith('vieneu:custom:'))")
                 assert not errors, errors
                 browser.close()
-                print(json.dumps({'upload':True,'studio_tts':True,'quick_and_batch_catalog':True,'page_errors':errors}))
+                print(json.dumps({'upload':True,'studio_tts':True,'preview_and_export_playback':True,'quick_and_batch_catalog':True,'page_errors':errors}))
         finally:
             process.terminate()
             try:process.wait(10)

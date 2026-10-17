@@ -10,6 +10,8 @@ Lồng tiếng là tùy chọn. Khi xuất, chọn **Giữ âm thanh gốc** ho�
 
 Tiến độ, thử lại và kết quả nằm ngay trong Studio. Kết quả từ phiên bản cũ không tự ghi đè nội dung đang sửa. API nhận diện/dịch cũ vẫn được giữ; công cụ xuất nâng cao cũ vẫn có trong menu video.
 
+Khung **Video gốc · chỉnh sửa** luôn phát âm thanh gốc để chỉnh timeline. Sau **Render thử 5 giây**, Studio chuyển sang **Bản render thử · có tiếng** để nghe đoạn kết quả; nút **Tải bản thử 5 giây** chỉ tải đoạn này. Muốn xuất toàn bộ, vào **Xuất video**, bổ sung lời đọc cho mọi câu được báo còn thiếu, tạo/căn lại giọng, rồi bấm **Xuất video có lồng tiếng**. Khi xử lý xong, dùng **Tải video đã xuất** hoặc **Mở thư mục**.
+
 ---
 
 ## 📂 Cấu Trúc Mã Nguồn (Architecture Overview)

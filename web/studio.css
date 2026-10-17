@@ -7,3 +7,4 @@
 @media(max-width:767px){.ns header{position:sticky;top:0}.ns .mobileTabs{top:var(--studio-header-height,180px)}.ns .job{position:static}}
 
 .ns .stage{max-height:none;max-width:calc(52vh * var(--stage-ratio,1.7778))}.ns .properties output{font-size:14px}@media(max-width:767px){.ns .stage{max-width:calc(42vh * var(--stage-ratio,1.7778))}}
+.ns .playbackTabs{margin:12px 0}.ns .playbackTabs button[aria-pressed=true]{background:#2c3354;border-color:#818cf8;color:#fff}.ns .renderedStage{touch-action:auto}
