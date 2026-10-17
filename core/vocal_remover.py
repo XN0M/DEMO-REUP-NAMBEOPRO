@@ -3,6 +3,7 @@ import subprocess
 import shutil
 import tempfile
 import imageio_ffmpeg
+from core.tts_runtime import GPU_LOCK, runtime, TTSError
 
 class VocalRemover:
     """
@@ -48,7 +49,13 @@ class VocalRemover:
                     "--out", tmpdir,
                     input_path
                 ]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+                with GPU_LOCK:
+                    if runtime.install_process and runtime.install_process.poll() is None:
+                        raise TTSError('Đang cài VieNeu; hãy chờ trước khi tách giọng bằng GPU')
+                    runtime.stop()
+                    if runtime.gpu_release:
+                        runtime.gpu_release()
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
                 if res.returncode == 0:
                     # Demucs xuat ra htdemucs_ft/<name>/no_vocals.wav
                     for root, _, files in os.walk(tmpdir):

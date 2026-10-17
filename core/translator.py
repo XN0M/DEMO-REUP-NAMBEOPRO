@@ -141,7 +141,7 @@ class DouyinTranslator:
         model: Optional[str] = None,
         base_url: Optional[str] = None
     ) -> str:
-        """Route call to chosen provider (gemini or openai)."""
+        """Route call to chosen provider (gemini, openai, or glm)."""
         prov = (provider or "gemini").strip().lower()
         if prov in ["openai", "chatgpt"]:
             return await self._call_openai(
@@ -149,6 +149,14 @@ class DouyinTranslator:
                 api_key=api_key,
                 model=model or self.default_openai_model,
                 base_url=base_url or self.default_openai_base_url
+            )
+        elif prov == "glm":
+            # GLM is fully compatible with OpenAI API
+            return await self._call_openai(
+                prompt=prompt,
+                api_key=api_key,
+                model=model or "glm-5",
+                base_url=base_url or "https://open.bigmodel.cn/api/paas/v4/"
             )
         else:
             return await self._call_gemini(

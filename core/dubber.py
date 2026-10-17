@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Tuple, Callable
 import httpx
 import imageio_ffmpeg
 from core.vocal_remover import VocalRemover
+from core.tts_runtime import runtime as vieneu_runtime, library as voice_library, GPU_LOCK, TTSError
 
 try:
     import audioop
@@ -85,6 +86,14 @@ VOICE_CATALOG = [
         "lang": "multilingual",
         "provider": "openai",
         "free": False
+    },
+    {
+        "id": "omnivoice",
+        "name": "OmniVoice (AI Auto-Clone Giọng Gốc)",
+        "gender": "neutral",
+        "lang": "multilingual",
+        "provider": "omnivoice",
+        "free": True
     }
 ]
 
@@ -95,6 +104,17 @@ class DouyinDubber:
         self.channels = 2
         self.sampwidth = 2 # 16-bit
         self.frame_size = self.channels * self.sampwidth
+        self.omnivoice_model = None
+        vieneu_runtime.gpu_release = self.release_omnivoice
+
+    def release_omnivoice(self):
+        if self.omnivoice_model is not None:
+            self.omnivoice_model = None
+            import gc
+            gc.collect()
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     def get_ffmpeg_exe(self) -> str:
         """Get path to FFmpeg binary."""
@@ -142,7 +162,13 @@ class DouyinDubber:
 
     def get_available_voices(self) -> List[Dict]:
         """Return list of supported TTS voices."""
-        return VOICE_CATALOG
+        try:
+            presets = vieneu_runtime.catalog(load=vieneu_runtime.python.exists() and not vieneu_runtime.install_process)
+        except (TTSError, OSError):
+            presets = []
+        custom = [dict(id='vieneu:custom:'+v['id'], name=v['name'], provider='vieneu', model='v3turbo',
+                       gender='neutral', lang='vi-VN', free=True, kind='custom') for v in voice_library.list()]
+        return [*VOICE_CATALOG, *presets, *custom]
 
     async def synthesize_edge(self, text: str, voice: str = "vi-VN-HoaiMyNeural", retries: int = 3) -> bytes:
         """Synthesize text using Microsoft Edge TTS with automatic retries."""
@@ -195,24 +221,83 @@ class DouyinDubber:
                 raise RuntimeError(f"OpenAI TTS Error ({resp.status_code}): {resp.text}")
             return resp.content
 
+    def _get_omnivoice_model(self):
+        if self.omnivoice_model is None:
+            try:
+                import torch
+                from omnivoice import OmniVoice
+            except ImportError:
+                raise RuntimeError("Thư viện omnivoice chưa được cài đặt. Vui lòng chạy lại file cài đặt (cai_dat.bat) hoặc: pip install omnivoice torch soundfile")
+            
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            print(f"[OmniVoice] Loading model on {device}...")
+            self.omnivoice_model = OmniVoice.from_pretrained(
+                "k2-fsa/OmniVoice",
+                device_map=device,
+                dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+            )
+        return self.omnivoice_model
+
+    async def synthesize_omnivoice(self, text: str, ref_audio: str = None) -> bytes:
+        import soundfile as sf
+        import io
+        import asyncio
+
+        if not ref_audio or not os.path.exists(ref_audio):
+            raise RuntimeError("OmniVoice yêu cầu file âm thanh tham chiếu (ref_audio) để clone giọng.")
+
+        loop = asyncio.get_running_loop()
+
+        def _generate_unlocked():
+            model = self._get_omnivoice_model()
+            # OmniVoice generate() returns a list of np.ndarray
+            audio_arrays = model.generate(
+                text=text,
+                ref_audio=ref_audio
+            )
+            if audio_arrays and len(audio_arrays) > 0:
+                wav_io = io.BytesIO()
+                sf.write(wav_io, audio_arrays[0], 24000, format='WAV')
+                return wav_io.getvalue()
+            return b""
+
+        def _generate():
+            with GPU_LOCK:
+                if vieneu_runtime.install_process and vieneu_runtime.install_process.poll() is None:
+                    raise TTSError('Đang cài VieNeu; hãy chờ trước khi dùng GPU')
+                vieneu_runtime.stop()
+                return _generate_unlocked()
+        return await loop.run_in_executor(None, _generate)
+
+    async def synthesize_vieneu(self, text: str, voice: str, cancelled=lambda: False) -> bytes:
+        return await asyncio.to_thread(vieneu_runtime.synthesize, text, voice, cancelled)
+
     async def synthesize_sentence(
         self,
         text: str,
         voice: str = "vi-VN-HoaiMyNeural",
         provider: str = "edge",
         api_key: str = "",
-        base_url: str = ""
+        base_url: str = "",
+        ref_audio: str = None,
+        cancelled=lambda: False
     ) -> bytes:
         """Synthesize a single sentence with auto provider detection."""
         text = text.strip()
         if not text:
             return b""
 
-        # Voice prefix / provider override
-        if voice.startswith("vi-VN-") or provider == "edge":
-            return await self.synthesize_edge(text, voice)
-        else:
+        if voice.startswith('vieneu:') or provider == 'vieneu':
+            return await self.synthesize_vieneu(text, voice, cancelled)
+        if provider == "omnivoice" or voice == "omnivoice":
+            return await self.synthesize_omnivoice(text, ref_audio)
+        elif voice in {v['id'] for v in VOICE_CATALOG if v['provider'] == 'openai'}:
             return await self.synthesize_openai(text, voice, api_key, base_url)
+        elif voice.startswith("vi-VN-") or provider == "edge":
+            return await self.synthesize_edge(text, voice)
+        elif provider == 'openai':
+            return await self.synthesize_openai(text, voice, api_key, base_url)
+        raise TTSError('Provider TTS không hợp lệ')
 
     def _convert_mp3_to_wav(self, mp3_path: str, wav_path: str):
         """Convert MP3 to standardized 44.1kHz 16-bit stereo PCM WAV."""
@@ -268,6 +353,24 @@ class DouyinDubber:
             raw_frames = wf.readframes(frames_count)
             return duration, raw_frames
 
+    def _extract_ref_audio(self, video_path: str, start_sec: float, end_sec: float, output_wav: str):
+        """Extract a segment of audio to use as reference for voice cloning."""
+        ffmpeg_exe = self.get_ffmpeg_exe()
+        cmd = [
+            ffmpeg_exe, "-y",
+            "-i", video_path,
+            "-ss", str(start_sec),
+            "-to", str(end_sec),
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", "24000",
+            "-ac", "1",
+            output_wav
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode != 0:
+            print(f"Lỗi extract_ref_audio: {res.stderr.decode('utf-8', errors='ignore')}")
+
     async def execute_dubbing(
         self,
         video_path: str,
@@ -300,13 +403,18 @@ class DouyinDubber:
             "dubbed_audio": None
         }
 
-        temp_dir = tempfile.mkdtemp(prefix="dub_")
+        # Stage beside the source so final os.replace stays on the same volume.
+        temp_dir = tempfile.mkdtemp(prefix=".dub_", dir=os.path.dirname(os.path.abspath(video_path)))
+        voice_lease = voice_library.pin([single_voice, *character_voices.values()])
+        leased = False
         try:
+            voice_lease.__enter__()
+            leased = True
             # 1. Prepare segments
             all_segments = transcript_data.get("segments", [])
             valid_segments = []
             for s in all_segments:
-                txt = s.get("vietnamese") or s.get("chinese") or s.get("text", "")
+                txt = s.get('dub_text') if s.get('dub_text') is not None else s.get("vietnamese") or s.get("chinese") or s.get("text", "")
                 txt = txt.strip()
                 if txt:
                     valid_segments.append({**s, "dub_text": txt})
@@ -358,7 +466,9 @@ class DouyinDubber:
                     if not voice:
                         # Infer voice from gender hint or single_voice
                         gender = char_gender_hint.get(speaker)
-                        if gender == "male":
+                        if single_voice.startswith('vieneu:'):
+                            voice = single_voice
+                        elif gender == "male":
                             voice = "vi-VN-NamMinhNeural"
                         elif gender == "female":
                             voice = "vi-VN-HoaiMyNeural"
@@ -368,16 +478,32 @@ class DouyinDubber:
                     voice = single_voice
 
                 # Synthesize
-                provider = "openai" if voice in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] else "edge"
+                if voice.startswith('vieneu:'):
+                    provider = 'vieneu'
+                elif voice == "omnivoice":
+                    provider = "omnivoice"
+                else:
+                    provider = "openai" if voice in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] else "edge"
+                    
                 seg_mp3 = os.path.join(temp_dir, f"seg_{idx}.mp3")
                 seg_wav = os.path.join(temp_dir, f"seg_{idx}.wav")
+
+                ref_audio_path = None
+                if provider == "omnivoice":
+                    # Extract original audio of this segment to use as zero-shot reference
+                    ref_audio_path = os.path.join(temp_dir, f"ref_{idx}.wav")
+                    # Try to get a slightly longer segment for better cloning if it's too short, but cap at video boundaries
+                    clone_start = max(0, start_sec - 0.5)
+                    clone_end = min(total_duration, end_sec + 0.5)
+                    self._extract_ref_audio(video_path, clone_start, clone_end, ref_audio_path)
 
                 audio_data = await self.synthesize_sentence(
                     text=text,
                     voice=voice,
                     provider=provider,
                     api_key=openai_api_key,
-                    base_url=openai_base_url
+                    base_url=openai_base_url,
+                    ref_audio=ref_audio_path
                 )
 
                 with open(seg_mp3, "wb") as f:
@@ -388,13 +514,17 @@ class DouyinDubber:
 
                 # Duration check & stretch
                 dur, frames = self._get_wav_duration_and_frames(seg_wav)
+                if provider == 'vieneu' and dur > slot_duration * 1.15:
+                    raise TTSError(f'Câu {idx+1} quá dài; hãy rút gọn lời đọc hoặc kéo dài thời gian trong Studio')
                 if dur > slot_duration and slot_duration >= 0.4:
                     speed = dur / slot_duration
-                    speed = min(1.65, speed) # Cap speedup at 1.65x for natural comprehension
-                    if speed >= 1.05:
+                    speed = min(1.15 if provider == 'vieneu' else 1.65, speed)
+                    if speed >= (1.0 if provider == 'vieneu' else 1.05):
                         stretched_wav = os.path.join(temp_dir, f"seg_{idx}_stretched.wav")
                         self._stretch_wav(seg_wav, stretched_wav, speed)
                         dur, frames = self._get_wav_duration_and_frames(stretched_wav)
+                if provider == 'vieneu' and dur > slot_duration + .02:
+                    raise TTSError(f'Câu {idx+1} vẫn quá dài sau căn thời gian; hãy sửa trong Studio')
 
                 # Paste into master buffer at start_sec
                 start_byte = int(start_sec * self.sample_rate) * self.frame_size
@@ -427,7 +557,8 @@ class DouyinDubber:
 
             # Export standalone dubbed MP3
             base_name = os.path.splitext(video_path)[0]
-            dubbed_mp3_path = f"{base_name}.dubbed.mp3"
+            final_mp3_path = f"{base_name}.dubbed.mp3"
+            dubbed_mp3_path = os.path.join(temp_dir, 'output.mp3')
             ffmpeg_exe = self.get_ffmpeg_exe()
 
             cmd_mp3 = [
@@ -437,13 +568,14 @@ class DouyinDubber:
                 "-b:a", "192k",
                 dubbed_mp3_path
             ]
-            subprocess.run(cmd_mp3, check=True)
+            subprocess.run(cmd_mp3, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             # 5. FFmpeg Mux with Video & Ducking
             self.tasks[task_id]["progress"] = 88
             self.tasks[task_id]["message"] = "Đang hòa trộn âm thanh ducking và ghép vào video..."
 
-            dubbed_video_path = f"{base_name}.dubbed.mp4"
+            final_video_path = f"{base_name}.dubbed.mp4"
+            dubbed_video_path = os.path.join(temp_dir, 'output.mp4')
             has_orig_audio = self.check_video_has_audio(video_path)
 
             bg_audio_file = video_path
@@ -521,6 +653,10 @@ class DouyinDubber:
                 err_msg = res_mux.stderr.decode("utf-8", errors="ignore")
                 raise RuntimeError(f"Lỗi FFmpeg khi ghép video lồng tiếng: {err_msg}")
 
+            # Publish only after successful mux; retain previous outputs on failure.
+            os.replace(dubbed_video_path, final_video_path)
+            os.replace(dubbed_mp3_path, final_mp3_path)
+            dubbed_video_path, dubbed_mp3_path = final_video_path, final_mp3_path
             self.tasks[task_id]["status"] = "completed"
             self.tasks[task_id]["progress"] = 100
             self.tasks[task_id]["message"] = "Lồng tiếng video thành công!"
@@ -539,4 +675,6 @@ class DouyinDubber:
             self.tasks[task_id]["message"] = f"Thất bại: {str(e)}"
             raise e
         finally:
+            if leased:
+                voice_lease.__exit__(None, None, None)
             shutil.rmtree(temp_dir, ignore_errors=True)

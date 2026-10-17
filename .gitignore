@@ -28,6 +28,7 @@ MANIFEST
 # ==============================================================================
 venv/
 .venv/
+.venv-vieneu/
 env/
 ENV/
 env.bak/
@@ -94,3 +95,7 @@ ehthumbs_vista.db
 *.swp
 *.swo
 *~
+
+# Persistent local Studio job state
+.runtime/
+.dub_*/

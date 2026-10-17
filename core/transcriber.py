@@ -69,7 +69,9 @@ class DouyinTranscriber:
         task_id: str,
         model_size: str = "base",
         language: str = "zh",
-        on_progress: Optional[Callable[[Dict], None]] = None
+        on_progress: Optional[Callable[[Dict], None]] = None,
+        persist: bool = True,
+        cancelled: Optional[Callable[[], bool]] = None
     ) -> Dict:
         """Asynchronously transcribe video file using ThreadPoolExecutor."""
         task_data = {
@@ -97,7 +99,9 @@ class DouyinTranscriber:
                 model_size,
                 language,
                 task_data,
-                on_progress
+                on_progress,
+                persist,
+                cancelled
             )
             return result
         except Exception as e:
@@ -114,14 +118,23 @@ class DouyinTranscriber:
         model_size: str,
         language: str,
         task_data: Dict,
-        on_progress: Optional[Callable[[Dict], None]]
+        on_progress: Optional[Callable[[Dict], None]],
+        persist: bool = True,
+        cancelled: Optional[Callable[[], bool]] = None
     ) -> Dict:
+        def checkpoint():
+            if cancelled and cancelled():
+                from .studio_media import Cancelled
+                raise Cancelled()
+
+        checkpoint()
         task_data["progress_text"] = f"Nạp mô hình AI Whisper ({model_size})..."
         task_data["percent"] = 15.0
         if on_progress:
             on_progress(task_data)
 
         model = self.get_model(model_size)
+        checkpoint()
 
         task_data["progress_text"] = "Đang nhận diện giọng nói & tách câu thoại..."
         task_data["percent"] = 30.0
@@ -166,6 +179,7 @@ class DouyinTranscriber:
         segments = []
 
         for seg in segments_generator:
+            checkpoint()
             cur_sec = seg.end
             pct = min(95.0, 30.0 + (cur_sec / total_duration) * 65.0)
             task_data["percent"] = round(pct, 1)
@@ -201,6 +215,8 @@ class DouyinTranscriber:
             if on_progress:
                 on_progress(task_data)
 
+        checkpoint()
+        task_data["duration"] = total_duration
         task_data["segments"] = segments
         task_data["status"] = "completed"
         task_data["percent"] = 100.0
@@ -214,9 +230,16 @@ class DouyinTranscriber:
         json_save_path = f"{base_name}.transcript.json"
         srt_save_path = f"{base_name}.srt"
 
+        # Studio applies the result with an explicit revision check. No legacy
+        # files are written by a snapshot job, including late/cancelled results.
+        if not persist:
+            if on_progress:
+                on_progress(task_data)
+            return task_data
+
         try:
-            with open(json_save_path, "w", encoding="utf-8") as f:
-                json.dump({
+            from core.studio_store import persist_legacy
+            persist_legacy(video_path, {
                     "video_path": video_path,
                     "model_size": model_size,
                     "detected_language": detected_lang,
@@ -224,7 +247,7 @@ class DouyinTranscriber:
                     "duration": total_duration,
                     "segments": segments,
                     "character_map": None
-                }, f, ensure_ascii=False, indent=2)
+                })
 
             # SRT gốc: dùng field chứa văn bản nguồn
             srt_content = self.generate_srt(segments, orig_field)

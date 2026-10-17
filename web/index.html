@@ -3,13 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Douyin, Facebook & YouTube Downloader MVP</title>
+  <link rel="stylesheet" href="/static/studio.css?v=20261017-workflow2" />
+  <script defer src="/static/studio.js?v=20261017-workflow2"></script>
+  <title>Nambeo · Video Studio</title>
+  <link rel="stylesheet" href="/static/app.css?v=20261017-workflow2" />
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
     body {
       font-family: 'Inter', sans-serif;
     }
@@ -33,7 +36,7 @@
         </div>
         <div>
           <h1 class="font-bold text-lg text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-200 group-hover:to-rose-200 transition-colors flex items-center gap-2">
-            Douyin, Facebook & YouTube Downloader <span class="text-xs bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded-full border border-rose-500/30">MVP</span>
+            Nambeo
           </h1>
           <p class="text-xs text-slate-400">Trích xuất & tải video Douyin, Facebook & YouTube Full HD không logo</p>
         </div>
@@ -484,6 +487,7 @@
         <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
           <span class="text-slate-300 font-medium">Giọng đọc lồng tiếng AI:</span>
           <select id="batchVoiceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 outline-none">
+            <option value="omnivoice">✨ OmniVoice (AI Clone Giọng Gốc)</option>
             <option value="vi-VN-HoaiMyNeural">Hoài My (Nữ - Truyền cảm, Tự nhiên)</option>
             <option value="vi-VN-NamMinhNeural">Nam Minh (Nam - Chuẩn giọng, Trầm ấm)</option>
           </select>
@@ -1211,6 +1215,7 @@
                   </button>
                 </div>
                 <select id="dubVoiceSelect" class="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+                  <option value="omnivoice" class="font-bold text-amber-300 bg-slate-900">✨ OmniVoice (AI Clone Giọng Gốc)</option>
                   <option value="vi-VN-HoaiMyNeural">Hoài My (Nữ - Tự nhiên, Biểu cảm) [Miễn phí - Edge TTS]</option>
                   <option value="vi-VN-NamMinhNeural">Nam Minh (Nam - Chuẩn giọng, Trầm ấm) [Miễn phí - Edge TTS]</option>
                   <option value="alloy">Alloy (Trung tính - OpenAI TTS)</option>
@@ -2011,7 +2016,7 @@
       <div class="flex flex-wrap justify-end gap-2"><button onclick="closeFolderPicker()" class="rounded-xl border border-slate-600 px-4 py-2">Đóng</button><button id="folderSubmit" onclick="submitFolderPicker()" class="rounded-xl bg-amber-500 text-slate-950 px-4 py-2 font-semibold disabled:opacity-40"></button></div>
     </section>
   </div>
-  <script src="/static/folders.js"></script>
+  <script src="/static/folders.js?v=20261017-workflow2"></script>
 <script>
     let currentTab = 'new';
     let videosData = [];
@@ -2374,11 +2379,11 @@
         });
         const data = await res.json();
         if (res.ok && data.status === 'success') {
-          resultDiv.innerHTML = `<span class="text-emerald-400 font-medium flex items-center gap-1">✓ 200 OK (${data.latency_seconds}s)</span>`;
+          resultDiv.textContent = `✓ 200 OK (${data.latency_seconds}s)`; resultDiv.className = 'text-emerald-400';
           showToast(`Test ${data.provider} (${data.model}) thành công trong ${data.latency_seconds}s!`);
         } else {
           const msg = data.detail || 'Lỗi kết nối';
-          resultDiv.innerHTML = `<span class="text-rose-400 font-medium" title="${msg}">✗ ${msg.slice(0, 30)}...</span>`;
+          resultDiv.textContent = `✗ ${msg}`; resultDiv.className = 'text-rose-400 break-words';
           showToast(`Lỗi test: ${msg}`, true);
         }
       } catch (e) {
@@ -2391,7 +2396,7 @@
       const engine = getSelectedAiEngine();
       const resDiv = document.getElementById('quickTestResult');
       if (resDiv) {
-        resDiv.innerHTML = `<span class="text-slate-400">Đang test ${engine.provider}:${engine.model}...</span>`;
+        resDiv.textContent = `Đang kiểm tra ${engine.provider}:${engine.model}…`;
         resDiv.classList.remove('hidden');
       }
 
@@ -2406,11 +2411,11 @@
         });
         const data = await res.json();
         if (res.ok && data.status === 'success') {
-          if (resDiv) resDiv.innerHTML = `<span class="text-emerald-400 font-medium">✓ ${data.model} sẵn sàng (${data.latency_seconds}s)</span>`;
+          if (resDiv) { resDiv.textContent = `✓ ${data.model} sẵn sàng (${data.latency_seconds}s)`; resDiv.className = 'text-emerald-400'; }
           showToast(`Model ${data.model} phản hồi tốt (${data.latency_seconds}s)!`);
         } else {
           const err = data.detail || 'Lỗi kết nối';
-          if (resDiv) resDiv.innerHTML = `<span class="text-rose-400 font-medium" title="${err}">✗ ${err.slice(0, 35)}...</span>`;
+          if (resDiv) { resDiv.textContent = `✗ ${err}`; resDiv.className = 'text-rose-400 break-words'; }
           showToast(err, true);
         }
       } catch (e) {
@@ -2905,11 +2910,11 @@
       container.innerHTML = '';
 
       videosData.forEach(v => {
-        let platformBadge = `<span class="text-[10px] font-semibold bg-rose-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="video" class="w-2.5 h-2.5"></i> Douyin</span>`;
+        let platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-rose-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="video" class="w-2.5 h-2.5"></i> Douyin</span>`;
         if (v.platform === 'facebook') {
-          platformBadge = `<span class="text-[10px] font-semibold bg-blue-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="facebook" class="w-2.5 h-2.5"></i> Facebook</span>`;
+          platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-blue-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="facebook" class="w-2.5 h-2.5"></i> Facebook</span>`;
         } else if (v.platform === 'youtube') {
-          platformBadge = `<span class="text-[10px] font-semibold bg-red-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="youtube" class="w-2.5 h-2.5"></i> YouTube</span>`;
+          platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-red-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="youtube" class="w-2.5 h-2.5"></i> YouTube</span>`;
         }
 
         const proxyCover = `/api/proxy-media?url=${encodeURIComponent(v.cover_url)}`;
@@ -2921,7 +2926,7 @@
         card.innerHTML = `
           <!-- Thumbnail & Badges -->
           <div class="relative w-full aspect-video bg-slate-950 overflow-hidden group">
-            <img id="imgThumb-${escapeHtml(v.id)}" src="${escapeHtml(proxyCover)}" alt="Cover" class="w-full h-full object-cover transition duration-300 group-hover:scale-105" onerror="this.src='https://placehold.co/600x340/0f172a/cbd5e1?text=No+Cover'" />
+            <img id="imgThumb-${escapeHtml(v.id)}" src="${escapeHtml(proxyCover)}" alt="Cover" class="w-full h-full object-cover transition duration-300 group-hover:scale-105" onerror="this.src='/static/video-placeholder.svg'" />
             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30"></div>
             
             <!-- Checkbox & Platform Badge -->
@@ -2940,7 +2945,7 @@
 
             <!-- First Frame Badge -->
             <div class="absolute bottom-2.5 left-2.5">
-              <span class="text-[9px] font-semibold bg-rose-600/80 backdrop-blur px-1.5 py-0.5 rounded text-white">Frame 0</span>
+              
             </div>
 
             <!-- Play Preview Overlay Button -->
@@ -2953,7 +2958,7 @@
           <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
             <div class="space-y-2">
               <div class="flex items-center space-x-2">
-                <img src="${v.author_avatar ? `/api/proxy-media?url=${encodeURIComponent(v.author_avatar)}` : 'https://placehold.co/100/1e293b/cbd5e1?text=U'}" alt="Avatar" class="w-6 h-6 rounded-full object-cover border border-slate-700" />
+                <img src="${v.author_avatar ? `/api/proxy-media?url=${encodeURIComponent(v.author_avatar)}` : '/static/video-placeholder.svg'}" alt="Avatar" class="w-6 h-6 rounded-full object-cover border border-slate-700" />
                 <span class="text-xs font-medium text-slate-300 truncate">${escapeHtml(v.author)}</span>
               </div>
               <h4 class="text-xs font-medium text-slate-100 line-clamp-2 leading-relaxed" title="${escapeHtml(v.title)}">
@@ -2990,8 +2995,10 @@
 
         container.appendChild(card);
 
-        // Capture actual first frame from video stream
-        captureFirstFrame(proxyPlay, `imgThumb-${v.id}`);
+        // Capture actual first frame from video stream (chỉ cho Douyin/Facebook, không phải YouTube)
+        if (v.platform !== 'youtube') {
+          captureFirstFrame(proxyPlay, `imgThumb-${v.id}`);
+        }
       });
 
       updateDownloadLabels();
@@ -3127,6 +3134,17 @@
               btnDl.innerText = 'Đang tải...';
               btnDl.className = 'flex-1 text-xs bg-slate-800 text-slate-400 py-2 rounded-xl transition';
             }
+          } else if (t.status === 'merging') {
+            // Giữ anyActive = true để không bị ngắt polling khi đang ghép âm thanh
+            anyActive = true;
+            bar.style.width = '98%';
+            pText.innerText = '98%';
+            sText.innerText = t.speed || 'Đang ghép âm thanh...';
+            if (btnDl) {
+              btnDl.disabled = true;
+              btnDl.innerText = 'Đang ghép...';
+              btnDl.className = 'flex-1 text-xs bg-slate-800 text-slate-400 py-2 rounded-xl transition';
+            }
           } else if (t.status === 'completed') {
             bar.style.width = '100%';
             bar.className = 'bg-emerald-500 h-1.5 rounded-full';
@@ -3144,9 +3162,17 @@
             bar.className = 'bg-rose-500 h-1.5 rounded-full';
             pText.innerText = 'Lỗi';
             sText.innerText = t.error || 'Thất bại';
+            // Khôi phục nút tải để người dùng có thể thử lại
+            if (btnDl) {
+              btnDl.disabled = false;
+              btnDl.onclick = () => downloadSingle(vId);
+              btnDl.innerHTML = '<i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Thử lại</span>';
+              btnDl.className = 'flex-1 text-xs bg-rose-900/60 border border-rose-700/50 text-rose-300 py-2 rounded-xl transition flex items-center justify-center gap-1';
+            }
           }
         }
 
+        window.updateDownloadSummary?.(tasks);
         refreshIcons();
 
         if (!anyActive && Object.keys(tasks).length > 0) {
@@ -3186,12 +3212,22 @@
         historyVideos = data.videos || [];
 
         document.getElementById('connectionError')?.remove();
+        document.getElementById('historyLoadError')?.remove();
         document.getElementById('historyCountBadge').textContent = historyVideos.length;
         renderCollectionFilterPills();
         renderHistoryCards();
       } catch (e) {
         console.error('Lỗi khi tải lịch sử:', e);
         showConnectionError();
+        const summary = document.getElementById('historySummary');
+        summary.textContent = 'Không tải được thư viện';
+        let retry = document.getElementById('historyLoadError');
+        if (!retry) {
+          retry = document.createElement('div'); retry.id = 'historyLoadError'; retry.className = 'nb-error'; retry.setAttribute('role','alert');
+          const text = document.createElement('p'); text.textContent = 'Không thể kết nối để cập nhật thư viện. Các video vẫn được lưu trên máy.';
+          const button = document.createElement('button'); button.textContent = 'Thử lại'; button.className = 'nb-button'; button.onclick = () => loadHistory(); retry.append(text,button);
+          document.getElementById('historyGrid').before(retry);
+        }
         showToast('Không tải được lịch sử từ máy chủ', true);
       }
     }
@@ -3215,16 +3251,20 @@
       emptyState.classList.add('hidden');
       grid.innerHTML = '';
 
-      const filtered = activeHistoryFilter === 'ALL'
-        ? historyVideos
-        : historyVideos.filter(v => (v.collection || 'Chung') === activeHistoryFilter);
+      const folderVideos = activeHistoryFilter === 'ALL' ? historyVideos : historyVideos.filter(v => (v.collection || 'Chung') === activeHistoryFilter);
+      const query = (document.getElementById('historySearch')?.value || '').trim().toLocaleLowerCase('vi');
+      const filtered = folderVideos.filter(v => `${v.title || ''} ${v.filename || ''} ${v.rel_path || ''}`.toLocaleLowerCase('vi').includes(query));
+      const order = document.getElementById('historySort')?.value || 'newest';
+      filtered.sort((a,b) => order === 'name' ? (a.title || a.filename || '').localeCompare(b.title || b.filename || '', 'vi') : (order === 'oldest' ? 1 : -1) * String(a.created_time || '').localeCompare(String(b.created_time || '')));
 
       const totalMB = filtered.reduce((acc, v) => acc + (v.size_mb || 0), 0);
       const filterText = activeHistoryFilter === 'ALL' ? '' : ` (Thư mục: ${activeHistoryFilter})`;
       summary.innerText = `${filtered.length} video${filterText} • Tổng ${totalMB.toFixed(1)} MB`;
 
       if (filtered.length === 0) {
-        renderFolderEmpty(grid);
+        if (query && folderVideos.length) {
+          const message = document.createElement('p'); message.className = 'col-span-full nb-loading'; message.textContent = 'Không tìm thấy video phù hợp. Thử từ khóa khác hoặc bỏ tìm kiếm.'; grid.append(message);
+        } else renderFolderEmpty(grid);
         const checkAllHistoryEl = document.getElementById('checkAllHistory');
         if (checkAllHistoryEl) checkAllHistoryEl.checked = false;
         updateHistorySelectedCount();
@@ -3233,11 +3273,11 @@
       }
 
       filtered.forEach(v => {
-        let platformBadge = `<span class="text-[10px] font-semibold bg-rose-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="video" class="w-2.5 h-2.5"></i> Douyin</span>`;
+        let platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-rose-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="video" class="w-2.5 h-2.5"></i> Douyin</span>`;
         if (v.platform === 'facebook') {
-          platformBadge = `<span class="text-[10px] font-semibold bg-blue-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="facebook" class="w-2.5 h-2.5"></i> FB</span>`;
+          platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-blue-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="facebook" class="w-2.5 h-2.5"></i> FB</span>`;
         } else if (v.platform === 'youtube') {
-          platformBadge = `<span class="text-[10px] font-semibold bg-red-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="youtube" class="w-2.5 h-2.5"></i> YouTube</span>`;
+          platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-red-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="youtube" class="w-2.5 h-2.5"></i> YouTube</span>`;
         }
 
         const card = document.createElement('div');
@@ -3246,17 +3286,13 @@
         card.innerHTML = `
           <!-- Thumbnail (First Frame extracted by OpenCV) -->
           <div class="relative w-full aspect-video bg-slate-950 overflow-hidden group">
-            <img src="${v.thumb_url}" alt="Thumbnail" class="w-full h-full object-cover transition duration-300 group-hover:scale-105" onerror="this.src='https://placehold.co/600x340/0f172a/cbd5e1?text=Video+Thumbnail'" />
+            <img src="${escapeHtml(v.thumb_url || '')}" alt="Thumbnail" class="w-full h-full object-cover transition duration-300 group-hover:scale-105" onerror="this.onerror=null;this.src='/static/video-placeholder.svg'" />
             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30"></div>
 
             <!-- Checkbox, Platform & Collection Badges -->
             <div class="absolute top-2.5 left-2.5 z-10 flex items-center space-x-1.5">
               <input type="checkbox" data-rel-path="${escapeHtml(encodeURIComponent(v.rel_path))}" onchange="updateHistorySelectedCount()" class="history-checkbox w-4 h-4 rounded bg-black/60 border-slate-500 text-rose-500 focus:ring-rose-500 cursor-pointer" />
               ${platformBadge}
-              <span class="text-[10px] font-semibold bg-amber-500/90 text-slate-950 px-2 py-0.5 rounded-full flex items-center gap-1 shadow">
-                <i data-lucide="folder" class="w-2.5 h-2.5"></i>
-                ${escapeHtml(v.collection || 'Chung')}
-              </span>
             </div>
 
             <div class="absolute top-2.5 right-2.5 flex items-center space-x-1.5">
@@ -3266,11 +3302,9 @@
               <span class="text-[10px] font-medium bg-black/70 backdrop-blur px-2 py-0.5 rounded-md text-white">${formatDuration(v.duration)}</span>
             </div>
 
-            <!-- First Frame & Transcript Indicators -->
-            <div class="absolute bottom-2.5 left-2.5 flex items-center space-x-1">
-              <span class="text-[9px] font-semibold bg-emerald-600/80 backdrop-blur px-1.5 py-0.5 rounded text-white flex items-center gap-1">
-                <i data-lucide="check-circle" class="w-2.5 h-2.5"></i> Frame 0
-              </span>
+            <!-- Media state shown below the title -->
+            <div data-media-state class="nb-media-state">
+              
               ${v.has_transcript ? `
                 <span class="text-[9px] font-semibold bg-purple-600/90 backdrop-blur px-1.5 py-0.5 rounded text-white flex items-center gap-1 shadow">
                   <i data-lucide="file-text" class="w-2.5 h-2.5"></i> Có lời thoại
@@ -3315,9 +3349,10 @@
                 ${escapeHtml(v.title)}
               </h4>
               <p class="text-sm text-amber-300 break-words">Thư mục: ${escapeHtml(v.collection || 'Chung')}</p>
+              <button class="rounded-xl bg-indigo-600 text-white px-3 py-2 text-sm" onclick="openSubtitleStudio(${jsAttrArg(v.rel_path)})">Studio phụ đề &amp; lồng tiếng</button>
               <button class="rounded-xl border border-amber-500/50 px-3 py-2 text-sm text-amber-200" onclick="openMoveFolder([${jsAttrArg(v.rel_path)}])">Chuyển thư mục</button>
               ${recentlyMoved.has(v.rel_path) ? '<p class="text-xs text-emerald-300">✓ Vừa chuyển vào đây</p>' : ''}
-              <p class="text-[10px] text-slate-500">${v.created_time}</p>
+              <p class="text-[10px] text-slate-500">${escapeHtml(v.created_time || '')}</p>
             </div>
 
             <!-- Action Buttons -->
@@ -3349,6 +3384,32 @@
           </div>
         `;
 
+        card.dataset.historyCard = '';
+        const studioButton = card.querySelector('[onclick^="openSubtitleStudio"]');
+        studioButton.parentElement.parentElement.classList.add('nb-card-body');
+        studioButton.previousElementSibling.className = 'nb-card-folder';
+        const mediaState = card.querySelector('[data-media-state]');
+        if (mediaState) { const summary = v.studio_summary; if (summary) { const status = document.createElement('span'); status.textContent = !summary.segments ? 'Chưa có bản thoại' : summary.missing_translation ? `Còn ${summary.missing_translation} câu chưa dịch` : 'Đã có bản dịch / tiếng Việt'; mediaState.replaceChildren(status); if(summary.voice_stale) { const voice = document.createElement('span'); voice.textContent='Giọng đọc cần cập nhật'; mediaState.append(voice); } } if(mediaState.children.length)studioButton.before(mediaState);else mediaState.remove(); }
+        studioButton.textContent = 'Mở Studio'; studioButton.className = 'nb-button primary full';
+        const moveButton = card.querySelector('[onclick^="openMoveFolder"]');
+        const viewButton = card.querySelector('[onclick^="openPreviewModal"]:not(.absolute)');
+        const oldActions = viewButton.parentElement;
+        const secondary = document.createElement('div'); secondary.className = 'nb-card-actions';
+        viewButton.className = 'nb-button'; viewButton.textContent = 'Xem video'; moveButton.className = 'nb-button'; secondary.append(viewButton, moveButton);
+        const menu = document.createElement('details'); menu.className = 'nb-card-menu';
+        const menuTitle = document.createElement('summary'); menuTitle.textContent = 'Thao tác khác';
+        const items = document.createElement('div'); items.className = 'nb-menu-items';
+        [...oldActions.children].forEach(button => {
+          const handler = button.getAttribute('onclick') || '';
+          if (handler.startsWith('openHistoryFile')) button.textContent = 'Mở trên máy';
+          if (handler.startsWith('confirmRestoreOriginal')) button.textContent = 'Khôi phục gốc';
+          if (handler.startsWith('confirmDeleteVideo')) { button.textContent = 'Xóa video'; button.dataset.danger = ''; }
+          if (handler.startsWith('openStudioModal')) button.textContent = 'Cắt và chỉnh video';
+          if (handler.startsWith('openTranscriptModal')) { button.textContent='Xuất nâng cao (công cụ cũ)'; button.removeAttribute('onclick'); button.onclick=()=>openLegacyTranscriptModal(encodeURIComponent(v.rel_path)); }
+          items.append(button);
+        });
+        menu.append(menuTitle, items);oldActions.replaceWith(secondary, menu);
+        const thumbPlay = card.querySelector('.absolute.inset-0.m-auto'); if (thumbPlay) { thumbPlay.classList.add('nb-thumb-play'); thumbPlay.setAttribute('aria-label','Phát video xem trước'); }
         grid.appendChild(card);
       });
 
@@ -3989,7 +4050,9 @@
       }
     }
 
-    async function openTranscriptModal(encodedRelPath) {
+    function openTranscriptModal(encodedRelPath) { return window.openSubtitleStudio(decodeURIComponent(encodedRelPath), 'transcript'); }
+
+    async function openLegacyTranscriptModal(encodedRelPath) {
       const relPath = decodeURIComponent(encodedRelPath);
       currentTranscriptRelPath = relPath;
 
@@ -4211,7 +4274,7 @@
           const pct = task.percent || 0;
           progressBar.style.width = `${pct}%`;
           progressPct.innerText = `${Math.round(pct)}%`;
-          progressText.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>${task.progress_text || 'Đang nhận diện âm thanh...'}</span>`;
+          progressText.textContent = task.progress_text || 'Đang nhận diện âm thanh…';
           refreshIcons();
 
           if (task.status === 'completed') {
@@ -4250,7 +4313,7 @@
             icon.setAttribute('data-lucide', 'mic');
             icon.classList.remove('animate-spin');
             showToast(task.error || 'Lỗi khi trích xuất', true);
-            progressText.innerHTML = `<i data-lucide="alert-circle" class="w-3.5 h-3.5 text-rose-400"></i><span>Lỗi: ${task.error || 'Thất bại'}</span>`;
+            progressText.textContent = 'Lỗi: ' + (task.error || 'Thất bại');
             refreshIcons();
           }
         } catch (e) {
@@ -4808,6 +4871,7 @@
             <span class="text-[10px] text-slate-400 truncate max-w-[120px]">${role}</span>
           </div>
           <select data-char-name="${encodeURIComponent(name)}" class="dub-char-select w-full bg-slate-900 border border-slate-700/70 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-rose-500">
+            <option value="omnivoice" class="text-amber-300 font-medium">✨ OmniVoice (Clone Giọng)</option>
             <option value="vi-VN-HoaiMyNeural" ${defaultVoice === 'vi-VN-HoaiMyNeural' ? 'selected' : ''}>Hoài My (Nữ - Edge)</option>
             <option value="vi-VN-NamMinhNeural" ${defaultVoice === 'vi-VN-NamMinhNeural' ? 'selected' : ''}>Nam Minh (Nam - Edge)</option>
             <option value="alloy">Alloy (OpenAI)</option>
@@ -5252,7 +5316,7 @@
       const msg = document.getElementById('replaceModalMsg');
       const repFilename = replacement.split(/[\\/]/).pop();
       if (msg) {
-        msg.innerHTML = `Bạn có chắc muốn áp dụng file <span class="font-mono text-emerald-400 font-semibold">${repFilename}</span> để thay thế file video gốc?`;
+        msg.textContent = `Bạn có chắc muốn áp dụng file ${repFilename} để thay thế file video gốc?`;
       }
       if (modal) modal.classList.remove('hidden');
       refreshIcons();
@@ -6120,7 +6184,7 @@
           const pctEl = document.getElementById('cropTrimProgressPct');
           if (bar) bar.style.width = pct + '%';
           if (pctEl) pctEl.textContent = pct + '%';
-          if (txt) txt.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>${d.progress_text || 'Đang xử lý...'}</span>`;
+          if (txt) txt.textContent = d.progress_text || 'Đang xử lý…';
           refreshIcons();
 
           if (d.status === 'completed') {
@@ -6217,5 +6281,8 @@
     loadSavedSubStyle();
     updateSubStyleUI();
   </script>
+  <link rel="stylesheet" href="/static/voices.css?v=1">
+  <script src="/static/voices.js?v=1"></script>
+  <script src="/static/app.js?v=20261017-workflow2"></script>
 </body>
 </html>

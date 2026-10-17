@@ -4,6 +4,7 @@ import math
 import shutil
 import tempfile
 import subprocess
+import uuid
 from typing import Optional, Dict, Callable
 import imageio_ffmpeg
 from core.subtitler import DouyinSubtitler
@@ -68,33 +69,45 @@ class VideoEditor:
         if not os.path.exists(input_video):
             raise FileNotFoundError(f"Khong tim thay video nguon: {input_video}")
 
+        if not (0.5 <= float(speed) <= 2.0):
+            raise ValueError("Tốc độ video phải nằm trong khoảng 0.5 đến 2.0")
+        if not (1.0 <= float(zoom_percent) <= 4.0):
+            raise ValueError("Zoom phải nằm trong khoảng 1.0 đến 4.0")
+
         total_dur = self.get_video_duration(input_video)
+        if total_dur <= 0:
+            raise ValueError("Không đọc được thời lượng video")
         effective_start = max(0.0, float(start_time or 0.0))
         effective_end = min(total_dur, float(end_time)) if (end_time and float(end_time) > 0) else total_dur
+        if effective_start >= total_dur or effective_end <= effective_start:
+            raise ValueError("Khoảng thời gian cắt không nằm trong video")
         target_duration = max(0.5, effective_end - effective_start)
         if speed and speed > 0:
             target_duration = target_duration / speed
 
         temp_files_to_clean = []
+        output_dir = os.path.dirname(os.path.abspath(output_video))
+        os.makedirs(output_dir, exist_ok=True)
+        temp_output = os.path.join(
+            output_dir,
+            f".{os.path.splitext(os.path.basename(output_video))[0]}.{uuid.uuid4().hex}.tmp.mp4"
+        )
+        temp_files_to_clean.append(temp_output)
 
         try:
             # 1. Xu ly phu de: Cat va dich chuyen timestamp neu can
             prepared_srt = None
             if srt_path and os.path.exists(srt_path):
-                if effective_start > 0 or (end_time and effective_end < total_dur):
-                    shifted_srt = DouyinSubtitler.shift_and_filter_subtitles(
-                        srt_path,
-                        start_sec=effective_start,
-                        end_sec=effective_end
-                    )
-                    prepared_srt = shifted_srt
-                    temp_files_to_clean.append(shifted_srt)
-                else:
-                    # Tao file tam tranh loi ky tu dac biet
-                    tmp_srt = os.path.join(tempfile.gettempdir(), f"sub_{os.getpid()}_{int(effective_start)}.srt")
-                    shutil.copy2(srt_path, tmp_srt)
-                    prepared_srt = tmp_srt
-                    temp_files_to_clean.append(tmp_srt)
+                fd, prepared_srt = tempfile.mkstemp(prefix="nambeo_sub_", suffix=".srt")
+                os.close(fd)
+                temp_files_to_clean.append(prepared_srt)
+                DouyinSubtitler.shift_and_filter_subtitles(
+                    srt_path,
+                    start_sec=effective_start,
+                    end_sec=effective_end,
+                    output_srt_path=prepared_srt,
+                    speed=float(speed)
+                )
 
             # 2. Xay dung video filtergraph
             v_filters = []
@@ -110,7 +123,10 @@ class VideoEditor:
             # Phong to (Zoom)
             if zoom_percent and zoom_percent > 1.01:
                 z = round(zoom_percent, 3)
-                v_filters.append(f"scale={z}*iw:{z}*ih,crop=iw:ih")
+                v_filters.append(
+                    f"crop=trunc(iw/{z}/2)*2:trunc(ih/{z}/2)*2:(iw-ow)/2:(ih-oh)/2,"
+                    f"scale=trunc(iw*{z}/2)*2:trunc(ih*{z}/2)*2"
+                )
 
             # Lam mo phu de goc (18% day man hinh)
             # Tach layer, cat vung day lam mo, roi de len lai
@@ -192,13 +208,33 @@ class VideoEditor:
                     cmd.extend(["-to", str(effective_end)])
                 cmd.extend(["-i", dubbed_audio_path])
                 audio_input_idx = 1
+                has_audio = True
+            else:
+                probe = subprocess.run(
+                    [self.ffmpeg_exe, "-i", input_video],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="ignore"
+                )
+                has_audio = bool(re.search(r"Stream #\d+:\d+.*Audio:", probe.stderr))
 
             # Audio speed
             a_filter = []
-            if speed and abs(speed - 1.0) > 0.01:
-                a_filter.append(f"atempo={speed}")
+            if has_audio and speed and abs(speed - 1.0) > 0.01:
+                remaining = float(speed)
+                while remaining > 2.0:
+                    a_filter.append("atempo=2.0")
+                    remaining /= 2.0
+                while remaining < 0.5:
+                    a_filter.append("atempo=0.5")
+                    remaining /= 0.5
+                a_filter.append(f"atempo={remaining:.6f}")
 
-            if a_filter:
+            if not has_audio:
+                audio_out_tag = None
+            elif a_filter:
                 filter_complex_parts.append(f"[{audio_input_idx}:a]{','.join(a_filter)}[a_final]")
                 audio_out_tag = "[a_final]"
             else:
@@ -211,7 +247,10 @@ class VideoEditor:
             else:
                 cmd.extend(["-map", "0:v"])
 
-            cmd.extend(["-map", audio_out_tag if audio_out_tag.startswith("[") else f"{audio_input_idx}:a?"])
+            if audio_out_tag is not None:
+                cmd.extend(["-map", audio_out_tag if audio_out_tag.startswith("[") else f"{audio_input_idx}:a"])
+            else:
+                cmd.append("-an")
 
             # Video & Audio encoding settings
             cmd.extend([
@@ -221,7 +260,7 @@ class VideoEditor:
                 "-c:a", "aac",
                 "-b:a", "192k",
                 "-movflags", "+faststart",
-                output_video
+                temp_output
             ])
 
             if progress_callback:
@@ -229,7 +268,7 @@ class VideoEditor:
 
             process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
@@ -254,6 +293,11 @@ class VideoEditor:
             process.wait()
             if process.returncode != 0:
                 raise RuntimeError(f"Lỗi FFmpeg khi render video: {output_video}")
+
+            if (not os.path.isfile(temp_output) or os.path.getsize(temp_output) == 0
+                    or self.get_video_duration(temp_output) <= 0):
+                raise RuntimeError("FFmpeg không tạo được file video đầu ra hợp lệ")
+            os.replace(temp_output, output_video)
 
             if progress_callback:
                 progress_callback(100.0, "Đã xuất video hoàn chỉnh thành công!")
@@ -434,4 +478,3 @@ class VideoEditor:
             task_data["status"] = "error"
             task_data["error"] = str(e)
             task_data["progress_text"] = f"Lỗi: {e}"
-

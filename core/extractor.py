@@ -76,57 +76,61 @@ class DouyinExtractor:
         captured_details = []
         render_data_info = None
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox"
-                ]
-            )
-            context = await browser.new_context(
-                user_agent=self.user_agent,
-                viewport={"width": 1280, "height": 900},
-                locale="zh-CN"
-            )
-            page = await context.new_page()
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox"
+                    ]
+                )
+                context = await browser.new_context(
+                    user_agent=self.user_agent,
+                    viewport={"width": 1280, "height": 900},
+                    locale="zh-CN"
+                )
+                page = await context.new_page()
 
-            async def handle_response(response):
-                r_url = response.url
-                if "aweme" in r_url and "detail" in r_url:
-                    if response.status == 200:
-                        try:
-                            data = await response.json()
-                            if "aweme_detail" in data and data["aweme_detail"]:
-                                print(f"[EXTRACTOR] Caught aweme_detail for id={data['aweme_detail'].get('aweme_id')}")
-                                captured_details.append(data["aweme_detail"])
-                        except Exception as e:
-                            pass
+                async def handle_response(response):
+                    r_url = response.url
+                    if "aweme" in r_url and "detail" in r_url:
+                        if response.status == 200:
+                            try:
+                                data = await response.json()
+                                if "aweme_detail" in data and data["aweme_detail"]:
+                                    print(f"[EXTRACTOR] Caught aweme_detail for id={data['aweme_detail'].get('aweme_id')}")
+                                    captured_details.append(data["aweme_detail"])
+                            except Exception as e:
+                                pass
 
-            page.on("response", handle_response)
+                page.on("response", handle_response)
 
-            try:
-                await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
-            except Exception as e:
-                print(f"[EXTRACTOR] Goto warning: {e}")
+                try:
+                    await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
+                except Exception as e:
+                    print(f"[EXTRACTOR] Goto warning: {e}")
 
-            # 1. Immediately inspect page HTML for RENDER_DATA SSR info
-            try:
-                html = await page.content()
-                render_data_info = self._extract_from_render_data(html, raw_url, video_id)
-                if render_data_info:
-                    print(f"[EXTRACTOR] Successfully parsed RENDER_DATA for id={render_data_info.get('id')}")
-            except Exception as e:
-                print(f"[EXTRACTOR] Error checking RENDER_DATA: {e}")
+                # 1. Immediately inspect page HTML for RENDER_DATA SSR info
+                try:
+                    html = await page.content()
+                    render_data_info = self._extract_from_render_data(html, raw_url, video_id)
+                    if render_data_info:
+                        print(f"[EXTRACTOR] Successfully parsed RENDER_DATA for id={render_data_info.get('id')}")
+                except Exception as e:
+                    print(f"[EXTRACTOR] Error checking RENDER_DATA: {e}")
 
-            # 2. If RENDER_DATA was not found, wait up to 10 seconds for API detail packet
-            if not render_data_info:
-                for _ in range(10):
-                    if captured_details:
-                        break
-                    await page.wait_for_timeout(1000)
+                # 2. If RENDER_DATA was not found, wait up to 10 seconds for API detail packet
+                if not render_data_info:
+                    for _ in range(10):
+                        if captured_details:
+                            break
+                        await page.wait_for_timeout(1000)
 
-            await browser.close()
+                await browser.close()
+        except Exception as e:
+            print(f"[EXTRACTOR] Playwright Error: {e}")
+            raise RuntimeError(f"Lỗi hệ thống khi mở trình duyệt ảo Playwright: {e}")
 
         if render_data_info:
             return render_data_info
@@ -144,8 +148,13 @@ class DouyinExtractor:
         try:
             raw = urllib.parse.unquote(m.group(1))
             data = json.loads(raw)
-        except Exception as e:
-            return None
+        except Exception:
+            try:
+                # Fallback: maybe it's not url-encoded
+                data = json.loads(m.group(1))
+            except Exception as e2:
+                print(f"[EXTRACTOR] JSON parse error in RENDER_DATA: {e2}")
+                return None
 
         def find_video_detail(obj):
             if isinstance(obj, dict):

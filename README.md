@@ -2,6 +2,14 @@
 
 Bộ công cụ tự động hóa xử lý video toàn diện: Tải video không logo, nhận diện giọng nói (STT), dịch thuật ngữ cảnh bằng AI và lồng tiếng tự động (TTS + Audio Ducking).
 
+### Quy trình Studio
+
+Trong **Thư viện**, bấm **Mở Studio** để làm việc theo bốn tab: **Bản thoại & Dịch → Phụ đề → Lồng tiếng → Xuất video**. Video mới có nút **Tạo bản thoại** ngay trong Studio; sau khi nhận diện, bấm **Dịch N câu sang tiếng Việt**, duyệt đề xuất rồi áp dụng. Bảng nhân vật và cấu hình AI có ngay tại tab này. Video tiếng Việt dùng lời thoại gốc.
+
+Lồng tiếng là tùy chọn. Khi xuất, chọn **Giữ âm thanh gốc** hoặc **Dùng bản lồng tiếng**, bật/tắt phụ đề riêng. Các thao tác nhận diện lại và dịch lại giữ bản hiện tại đến khi duyệt; nhận diện lại tạo phiên bản có thể khôi phục. Waveform chỉ chạy khi bấm tải. Nếu hủy nhận diện khi model đang nạp hoặc xử lý một đoạn, ứng dụng chờ phần đó dừng an toàn trước khi nhả khóa video.
+
+Tiến độ, thử lại và kết quả nằm ngay trong Studio. Kết quả từ phiên bản cũ không tự ghi đè nội dung đang sửa. API nhận diện/dịch cũ vẫn được giữ; công cụ xuất nâng cao cũ vẫn có trong menu video.
+
 ---
 
 ## 📂 Cấu Trúc Mã Nguồn (Architecture Overview)
@@ -84,3 +92,85 @@ Mã nguồn được viết tường minh, dễ dàng bảo trì và mở rộng
 - Python >= 3.10
 - FFmpeg (Được tích hợp sẵn thông qua package `imageio-ffmpeg`, không cần cài đặt thêm)
 - Playwright Chromium (Tự động tải khi chạy `cai_dat.bat`)
+- yt-dlp (Cài tự động qua `requirements.txt`, dùng để tải video YouTube)
+
+
+## Studio phụ đề & lồng tiếng
+
+Trong **Lịch sử đã tải**, chọn **Studio phụ đề & lồng tiếng**. Nếu video chưa có
+bản thoại, dùng nút **Bản thoại** để nhận diện trước. Studio đọc transcript cũ
+mà không tự chuyển đổi dữ liệu trên ổ đĩa.
+
+- Sửa nội dung gốc, bản dịch, lời đọc riêng và người nói; chọn câu để tạo giọng
+  hoặc nhận đề xuất dịch/rút gọn. Đề xuất chỉ thay nội dung sau khi được duyệt.
+- Bấm timeline để tua, kéo hai đầu cue để đổi thời gian. Tách tại đầu phát và
+  con trỏ văn bản; gộp câu khác người nói sẽ yêu cầu chọn người nói mới.
+- Chỉnh font DejaVu Sans đóng gói, màu/viền/nền, song ngữ và vùng che riêng.
+  Preview tương tác là bản gần đúng; **Render thử 5 giây** dùng cùng ASS/font/
+  filter như xuất cuối. Softsub MP4 không bảo toàn đầy đủ style; tải ASS hoặc
+  xuất hardsub để giữ hình thức.
+- Lưu style theo video, preset cá nhân lưu trong trình duyệt. Giữ 20 phiên bản
+  đã lưu, cùng backup transcript trước lần lưu đầu. Khôi phục tạo revision mới.
+- TTS chỉ tạo lại nội dung/giọng thay đổi, căn thời gian từ audio cache khi kéo
+  cue. Giới hạn hai yêu cầu đồng thời; tăng tốc tối đa 1,15×. Câu quá dài phải
+  được rút gọn hoặc kéo dài thời gian, không cắt đuôi audio.
+- Bật **Dùng bản lồng tiếng** để phối giọng và nền khi xuất. Bản xuất hoàn chỉnh
+  bị chặn khi thiếu giọng; bản thử có lựa chọn bỏ qua câu lỗi rõ ràng.
+- Job lưu SQLite ở `.runtime/studio.sqlite3`; job bị gián đoạn sau restart có
+  thể chạy lại bằng cache. **Lịch sử job** cho phép xem các bản render trước.
+- Batch ưu tiên cấu hình của video đã được lưu trong Studio; video còn lại giữ
+  luồng batch cũ. Batch Studio tạo phần audio còn thiếu trước khi render.
+
+Transcript `.transcript.json` là dữ liệu chuẩn, có ID câu và revision.
+`.studio.json` là bản phản chiếu cấu hình có thể dựng lại; `.studio-assets/`
+chứa phiên bản, manifest, audio cache và các bản xuất riêng theo revision.
+Chuyển/xóa nguồn qua ứng dụng sẽ bao gồm các tài nguyên này. Không sửa/xóa
+cache thủ công trong khi job đang chạy. Các bản xuất cũ được giữ khi render lỗi.
+Không đưa API key vào project, cache hoặc snapshot job.
+
+API mới dùng prefix `/api/studio`: project (GET/PUT), tts, translate, shorten,
+preview, export, waveform, jobs và cancel; asset và subtitles để tải kết quả.
+Lưu với revision cũ trả 409; input Studio không hợp lệ trả 400; đường dẫn ngoài
+thư mục tải trả 403. Các endpoint cũ tiếp tục dùng được.
+
+Kiểm thử: `python -m unittest discover -s tests -v`. Bộ test dùng FFmpeg thật
+với video mẫu và mock toàn bộ dịch vụ AI/TTS, không phát sinh chi phí API.
+Font và giấy phép nằm trong `web/fonts/`.
+
+## VieNeu-TTS local và giọng cá nhân
+
+Trong phần chọn giọng của Studio, lồng tiếng nhanh hoặc batch, bấm **Giọng cá
+nhân / Cài VieNeu**. Chọn **RTX / CUDA** cho máy có NVIDIA, rồi **Cài / sửa
+VieNeu**. Hoặc chạy `cai_vieneu.bat`. Bộ cài tạo `.venv-vieneu` riêng, tải
+PyTorch CUDA 12.8 và VieNeu 3.8.3, tải model rồi thử giọng có sẵn và nhân bản.
+Lần đầu cần mạng, nhiều GB ổ trống và có thể mất nhiều phút. Theo dõi trạng
+thái và nhật ký ngay trong cửa sổ. Cần driver hỗ trợ CUDA 12.8; nếu CUDA lỗi,
+có thể chọn CPU rõ ràng. Môi trường Python của ứng dụng chính được giữ riêng.
+Khi chuyển CUDA/CPU lần đầu, bấm **Cài / sửa VieNeu** để tải bộ model cho thiết
+bị đó. Model đã chuẩn bị được dùng offline và cache ghi nhận phiên bản snapshot.
+
+Sau khi cài, chọn giọng **vieneu** trong danh sách; Studio cho phép chọn riêng
+theo người nói. Giọng có sẵn và giọng cá nhân dùng chung ở cả ba luồng. Tùy chọn
+**Mặc định cho nhanh / batch** lưu trên trình duyệt cho các tác vụ mới; cấu hình
+giọng của video đã lưu trong Studio vẫn được ưu tiên khi batch.
+
+Thêm giọng bằng WAV/MP3/M4A/FLAC dài **3–8 giây**, tối đa **20 MB**, một người
+nói rõ, ít nhạc nền. Đặt tên và xác nhận quyền sử dụng; bấm **Thử giọng** để
+nghe câu mới bằng mẫu vừa lưu. Audio mẫu được chuẩn hóa WAV mono 48 kHz, lưu
+cùng metadata trong `.runtime/voices`; không gửi mẫu đến dịch vụ TTS đám mây.
+Giọng đang được job sử dụng không thể xóa. Nếu xóa giọng, dự án tham chiếu cần
+chọn lại trước khi tạo lời mới. Sao lưu thư mục này nếu muốn giữ giọng cá nhân.
+
+Worker chỉ lắng nghe localhost, có token riêng và tự giải phóng sau 5 phút
+không dùng. VieNeu chạy lần lượt và chia sẻ lượt GPU với OmniVoice/Demucs.
+Không tự đổi sang giọng hay provider khác khi gặp lỗi. Cache phụ thuộc lời
+đọc, giọng, nội dung mẫu và phiên bản engine; đổi tên giọng không tạo lại câu.
+VieNeu ở luồng nhanh/batch cũng giới hạn tăng tốc 1,15×; câu dài cần sửa trong
+Studio. Cơ chế giảm nền/tách giọng hiện có vẫn được sử dụng.
+
+API bổ sung: `/api/tts/status`, `/install`, `/device`, `/log` và
+`/voices/custom` (GET/POST), `/voices/custom/{id}` (PATCH/DELETE),
+`/voices/custom/{id}/sample` (GET), đều dưới prefix `/api/tts`.
+Upload dùng body audio nhị phân với query `name`, `filename`, `consent=true`.
+Giọng dùng `{provider: "vieneu", model: "v3turbo", voice: "vieneu:preset:…"}`
+hoặc `voice: "vieneu:custom:<uuid>"`. `/api/dub/voices` cung cấp danh mục chung.

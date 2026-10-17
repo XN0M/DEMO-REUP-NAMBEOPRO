@@ -36,7 +36,20 @@ if errorlevel 1 goto :install_error
 echo [*] Cai dat cac thu vien thanh cong!
 echo.
 
-echo [4/4] Cai dat Playwright Chromium ho tro boc tach video...
+echo [4/5] Kiem tra Card do hoa de cai dat PyTorch & OmniVoice...
+wmic path win32_VideoController get name | find /I "nvidia" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [*] Phat hien Card do hoa NVIDIA. Dang cai dat PyTorch phien ban GPU (CUDA 12.1)...
+    %PY_EXEC% -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+) else (
+    echo [*] Khong tim thay Card NVIDIA. Dang cai dat PyTorch phien ban CPU (se chay cham hon)...
+    %PY_EXEC% -m pip install torch torchaudio
+)
+echo [*] Dang cai dat OmniVoice de Clone Giong Noi...
+%PY_EXEC% -m pip install omnivoice soundfile
+echo.
+
+echo [5/5] Cai dat Playwright Chromium ho tro boc tach video...
 %PY_EXEC% -m playwright install chromium
 echo.
 
@@ -44,6 +57,7 @@ echo ================================================================
 echo         CHUC MUNG! CAI DAT NAMBEO PRO HOAN TAT 100%%
 echo ================================================================
 echo Bay gio ban co the khoi chay cong cu bang cach mo file: run.bat
+echo Muon dung VieNeu local: chay cai_vieneu.bat hoac mo Giong ca nhan trong ung dung.
 echo ================================================================
 echo.
 pause

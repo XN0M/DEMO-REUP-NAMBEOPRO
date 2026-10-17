@@ -347,7 +347,8 @@ class DouyinSubtitler:
         srt_path: str,
         start_sec: float = 0.0,
         end_sec: Optional[float] = None,
-        output_srt_path: Optional[str] = None
+        output_srt_path: Optional[str] = None,
+        speed: float = 1.0
     ) -> str:
         """
         Cat va dich chuyen moc thoi gian phu de khi cat video:
@@ -356,6 +357,8 @@ class DouyinSubtitler:
         """
         if not os.path.exists(srt_path):
             raise FileNotFoundError(f"Khong tim thay file phụ đề: {srt_path}")
+        if not (0.0 < speed <= 100.0):
+            raise ValueError("Tốc độ phụ đề phải lớn hơn 0")
 
         if not output_srt_path:
             base, ext = os.path.splitext(srt_path)
@@ -382,8 +385,9 @@ class DouyinSubtitler:
                 continue
 
             # Crop thoi gian neu can
-            adj_start = max(0.0, c_start - start_sec)
-            adj_end = max(adj_start + 0.3, (min(c_end, end_sec) if end_sec else c_end) - start_sec)
+            adj_start = max(0.0, c_start - start_sec) / speed
+            clipped_end = (min(c_end, end_sec) if end_sec else c_end) - start_sec
+            adj_end = max(adj_start + 0.03, clipped_end / speed)
 
             start_str = cls.format_srt_time(adj_start)
             end_str = cls.format_srt_time(adj_end)
@@ -395,4 +399,3 @@ class DouyinSubtitler:
             f.write("\n\n".join(new_cues) + "\n")
 
         return output_srt_path
-

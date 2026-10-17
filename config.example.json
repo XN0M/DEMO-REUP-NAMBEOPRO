@@ -5,5 +5,7 @@
   "default_ai_provider": "gemini",
   "default_ai_model": "gemini-3-flash-preview",
   "gemini_model": "gemini-3-flash-preview",
-  "openai_model": "gpt-4o-mini"
+  "openai_model": "gpt-4o-mini",
+  "glm_api_key": "",
+  "glm_model": "glm-5"
 }

@@ -4,6 +4,7 @@ import os
 import sys
 import subprocess
 import shutil
+import sqlite3
 import threading
 import math
 import re
@@ -35,6 +36,7 @@ import uuid
 from core.video_files import is_source, associated_files, collection_for
 from core.video_move import move_video
 from functools import wraps
+from core.studio_store import persist_legacy, Conflict as StudioConflict, LOCK as studio_data_lock, load as load_studio_transcript
 from core.downloader import DouyinDownloader
 from core.extractor import DouyinExtractor
 from core.transcriber import DouyinTranscriber
@@ -126,7 +128,8 @@ def _locked_history_action(fn):
         if _download_in_progress(path) or not _reserve_source_job(path):
             raise HTTPException(409, "Video đang được xử lý")
         try:
-            return await fn(*args, **kwargs)
+            with studio_data_lock:
+                return await fn(*args, **kwargs)
         finally:
             _release_source_job(path)
     return wrapped
@@ -385,6 +388,8 @@ async def test_ai_connection(req: AiTestRequest):
             base_url=base_url
         )
         return res
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -423,6 +428,8 @@ async def open_folder(req: OpenFolderRequest):
         else:
             subprocess.run(["xdg-open", folder])
         return {"status": "success", "opened": folder}
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi mở thư mục: {str(e)}")
 
@@ -432,7 +439,7 @@ async def get_collections():
     if os.path.exists(current_download_dir):
         for item in sorted(os.listdir(current_download_dir)):
             item_path = os.path.join(current_download_dir, item)
-            if (os.path.isdir(item_path) and not item.startswith(".")
+            if (os.path.isdir(item_path) and not item.startswith(".") and not item.endswith(".studio-assets")
                     and not re.fullmatch(r"[a-zA-Z]+_\d{3,}_\d{8}(?:_\d+)?", item)):
                 if item not in cols:
                     cols.append(item)
@@ -446,7 +453,7 @@ async def create_collection(req: CollectionCreateRequest):
     safe_name = downloader.sanitize_filename(name, max_len=30)
     if not safe_name:
         raise HTTPException(status_code=400, detail="Tên bộ sưu tập không hợp lệ")
-    if safe_name.startswith(".") or re.fullmatch(r"[a-zA-Z]+_\d{3,}_\d{8}(?:_\d+)?", safe_name):
+    if safe_name.startswith(".") or safe_name.endswith(".studio-assets") or re.fullmatch(r"[a-zA-Z]+_\d{3,}_\d{8}(?:_\d+)?", safe_name):
         raise HTTPException(400, "Tên thư mục không hợp lệ")
     col_dir = _resolve_safe_path(safe_name)
     os.makedirs(col_dir, exist_ok=True)
@@ -460,12 +467,17 @@ async def parse_videos(req: ParseRequest):
 
     results = []
     for raw_url in valid_urls:
-        info = await extractor.parse_single_url(raw_url)
-        if info:
-            parsed_cache[info["id"]] = info
-            # Return without heavy raw_detail
-            item = {k: v for k, v in info.items() if k != "raw_detail"}
-            results.append(item)
+        try:
+            info = await extractor.parse_single_url(raw_url)
+            if info:
+                parsed_cache[info["id"]] = info
+                # Return without heavy raw_detail
+                item = {k: v for k, v in info.items() if k != "raw_detail"}
+                results.append(item)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Lỗi không xác định: {str(e)}")
 
     if not results:
         raise HTTPException(
@@ -595,6 +607,8 @@ async def get_history():
             base_real = os.path.realpath(current_download_dir)
             safe_dirs = []
             for directory in dirs:
+                if directory.endswith(".studio-assets"):
+                    continue
                 try:
                     if os.path.commonpath([base_real, os.path.realpath(os.path.join(folder, directory))]) == base_real:
                         safe_dirs.append(directory)
@@ -703,7 +717,24 @@ async def get_history():
                 else:
                     best_video_rel = rel_mp4
 
+                studio_summary = {'segments': 0, 'missing_translation': 0, 'voice_stale': False}
+                try:
+                    if os.path.exists(transcript_path):
+                        transcript = load_studio_transcript(mp4_path)
+                        cues = transcript['segments']
+                        studio_summary['segments'] = len(cues)
+                        studio_summary['missing_translation'] = sum(
+                            1 for cue in cues if not str(cue.get('vietnamese') or '').strip()
+                        ) if transcript.get('detected_language') != 'vi' else 0
+                        if transcript.get('studio_enabled'):
+                            entries = studio_service.audio_status(mp4_path, transcript)
+                            studio_summary['voice_stale'] = any(
+                                entry['status'] in ('stale', 'needs_alignment') for entry in entries.values())
+                except (OSError, ValueError, KeyError, TypeError, HTTPException):
+                    pass
+
                 history.append({
+                    "studio_summary": studio_summary,
                     "filename": f,
                     "rel_path": rel_mp4,
                     "collection": col_name,
@@ -772,7 +803,11 @@ def _delete_video_and_associated_files(filepath: str) -> List[str]:
     for p in target_files:
         if os.path.exists(p):
             try:
-                os.remove(p)
+                _resolve_safe_path(os.path.relpath(p, current_download_dir))
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+                else:
+                    os.remove(p)
                 deleted.append(os.path.basename(p))
             except Exception as e:
                 print(f"Error removing {p}: {e}")
@@ -824,7 +859,12 @@ async def move_history_videos(req: MoveVideosRequest):
             if collection_for(source, current_download_dir) == req.collection:
                 result["skipped"].append({"filepath": relative, "reason": "Video đã ở thư mục đích"})
                 continue
-            new_path = move_video(source, current_download_dir, destination, _resolve_safe_path)
+            with studio_data_lock:
+                new_path = move_video(source, current_download_dir, destination, _resolve_safe_path)
+                try:
+                    studio_service.relocate(relative, os.path.relpath(new_path, current_download_dir).replace("\\", "/"))
+                except (OSError, sqlite3.Error):
+                    pass  # Job history is optional; all Studio assets already moved with the source.
             result["moved"].append({"old_filepath": relative, "new_filepath": os.path.relpath(new_path, current_download_dir).replace("\\", "/")})
             for task in downloader.tasks.values():
                 if task.get("file_path") == source:
@@ -870,6 +910,8 @@ async def open_history_file(req: OpenFileRequest):
         else:
             subprocess.run(["xdg-open", full_path])
         return {"status": "success", "opened": full_path}
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi mở file: {str(e)}")
 
@@ -1056,6 +1098,8 @@ async def get_transcript(filepath: str):
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi đọc bản thoại: {str(e)}")
 
@@ -1070,6 +1114,8 @@ async def generate_character_map(req: CharacterMapRequest):
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi mở file kịch bản: {str(e)}")
 
@@ -1116,9 +1162,10 @@ async def generate_character_map(req: CharacterMapRequest):
         data["character_map"] = char_map
         data["ai_provider"] = provider
         data["ai_model"] = model
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        persist_legacy(full_path, data)
         return {"status": "success", "character_map": char_map, "provider": provider, "model": model}
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -1135,6 +1182,8 @@ async def execute_translation(req: TranslateRequest):
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi mở file kịch bản: {str(e)}")
 
@@ -1181,8 +1230,7 @@ async def execute_translation(req: TranslateRequest):
         data["ai_model"] = model
 
         # Save updated json
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        persist_legacy(full_path, data)
 
         # Save Vietnamese SRT
         vi_srt_path = f"{base_name}.vi.srt"
@@ -1206,6 +1254,8 @@ async def execute_translation(req: TranslateRequest):
             f.write(DouyinTranscriber.generate_txt(translated_segments, include_timestamps=True))
 
         return {"status": "success", "segments": translated_segments}
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -1250,6 +1300,8 @@ async def translate_chunk_endpoint(req: TranslateChunkRequest):
             base_url=base_url
         )
         return {"status": "success", "segments": translated, "model": model, "provider": provider}
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1269,8 +1321,7 @@ async def save_transcript(req: SaveTranscriptRequest):
         if req.character_map:
             data["character_map"] = req.character_map
 
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        persist_legacy(full_path, data)
 
         # Update SRT & TXT if translations exist
         has_vi = any(s.get("vietnamese") for s in req.segments)
@@ -1294,6 +1345,8 @@ async def save_transcript(req: SaveTranscriptRequest):
                 f.write(DouyinTranscriber.generate_txt(req.segments, include_timestamps=True))
 
         return {"status": "success", "message": "Đã lưu bản thoại"}
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi lưu bản thoại: {str(e)}")
 
@@ -1304,7 +1357,7 @@ async def save_transcript(req: SaveTranscriptRequest):
 @app.get("/api/dub/voices")
 async def get_dub_voices():
     """Return available TTS voices for dubbing."""
-    return {"voices": dubber.get_available_voices()}
+    return {"voices": await asyncio.to_thread(dubber.get_available_voices)}
 
 @app.post("/api/dub/preview")
 async def preview_dub_voice(req: DubPreviewRequest):
@@ -1321,7 +1374,9 @@ async def preview_dub_voice(req: DubPreviewRequest):
             api_key=openai_key,
             base_url=openai_base
         )
-        return Response(content=audio_bytes, media_type="audio/mpeg")
+        return Response(content=audio_bytes, media_type="audio/wav" if (req.voice or '').startswith('vieneu:') else "audio/mpeg")
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1340,6 +1395,8 @@ async def execute_dubbing(req: DubExecuteRequest):
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             transcript_data = json.load(f)
+    except StudioConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi đọc file phụ đề: {e}")
 
@@ -1800,6 +1857,14 @@ def _run_batch_pipeline_worker(batch_id: str, req_data: dict):
                     fail(filepath, "input", "Video đang được xử lý ở một tác vụ khác")
                     continue
                 try:
+                    if os.path.isfile(os.path.splitext(full_path)[0] + '.transcript.json') and load_studio_transcript(full_path).get('studio_enabled'):
+                        try:
+                            output = studio_service.batch(full_path)
+                            task["completed"].append(os.path.relpath(output, current_download_dir).replace("\\", "/"))
+                            log_msg("  ✓ Hoàn tất theo cấu hình Studio đã lưu")
+                        except Exception as studio_error:
+                            fail(filepath, "studio", studio_error)
+                        continue
                     base_name = os.path.splitext(full_path)[0]
                     transcript_path = f"{base_name}.transcript.json"
                     source_srt = f"{base_name}.srt"
@@ -1903,8 +1968,7 @@ def _run_batch_pipeline_worker(batch_id: str, req_data: dict):
                         transcript_data["ai_model"] = model
 
                     transcript_data["segments"] = segments
-                    with open(transcript_path, "w", encoding="utf-8") as f:
-                        json.dump(transcript_data, f, ensure_ascii=False, indent=2)
+                    persist_legacy(full_path, transcript_data)
                     with open(vi_srt, "w", encoding="utf-8") as f:
                         f.write(DouyinTranscriber.generate_srt(segments, "vietnamese"))
 
@@ -2079,6 +2143,11 @@ async def get_crop_trim_task(task_id: str):
         result["output_video_rel"] = rel
         result["output_video_url"] = f"/api/history/stream/{urllib.parse.quote(rel)}"
     return result
+
+from core.studio_api import attach as attach_studio
+studio_service = attach_studio(sys.modules[__name__])
+from core.tts_api import attach as attach_tts
+attach_tts(sys.modules[__name__])
 
 # Serve Frontend
 web_dir = os.path.join(BASE_DIR, "web")

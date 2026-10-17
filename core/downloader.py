@@ -46,9 +46,14 @@ class DouyinDownloader:
 
     @staticmethod
     def extract_first_frame(video_path: str, thumb_path: str) -> bool:
-        """Extract first frame of an mp4 video using OpenCV with Unicode path support."""
+        """Extract first frame of an mp4 video.
+        Thử OpenCV trước (nhanh), fallback sang imageio_ffmpeg nếu codec không được hỗ trợ
+        (ví dụ AV1, VP9 trên Windows không có decoder).
+        """
         if not os.path.exists(video_path):
             return False
+
+        # --- Cách 1: OpenCV ---
         try:
             import cv2
             cap = cv2.VideoCapture(video_path)
@@ -61,7 +66,30 @@ class DouyinDownloader:
                         f.write(buf)
                     return True
         except Exception as e:
-            print(f"Error extracting first frame from {video_path}: {e}")
+            print(f"[Downloader] OpenCV thumbnail failed for {video_path}: {e}")
+
+        # --- Cách 2: FFmpeg (fallback) ---
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            import subprocess
+            result = subprocess.run(
+                [
+                    ffmpeg_exe, "-y",
+                    "-ss", "00:00:00.500",
+                    "-i", video_path,
+                    "-vframes", "1",
+                    "-q:v", "3",
+                    thumb_path
+                ],
+                capture_output=True,
+                timeout=30
+            )
+            if result.returncode == 0 and os.path.exists(thumb_path):
+                return True
+        except Exception as e:
+            print(f"[Downloader] FFmpeg thumbnail fallback failed for {video_path}: {e}")
+
         return False
 
 
@@ -176,7 +204,15 @@ class DouyinDownloader:
                     task_data,
                     on_progress
                 )
-            # Extract first frame
+
+            # Kiểm tra tính toàn vẹn file trước khi kết luận thành công
+            if not os.path.exists(mp4_path) or os.path.getsize(mp4_path) == 0:
+                raise RuntimeError(
+                    "Tệp video tải về không tồn tại hoặc có kích thước 0 byte. "
+                    "Vui lòng kiểm tra kết nối mạng và thử tải lại."
+                )
+
+            # Extract first frame (thumbnail)
             await loop.run_in_executor(None, self.extract_first_frame, mp4_path, thumb_path)
             task_data["status"] = "completed"
             task_data["percent"] = 100.0
@@ -186,11 +222,18 @@ class DouyinDownloader:
             task_data["status"] = "failed"
             task_data["error"] = str(e)
             print(f"Error downloading {video_id}: {e}")
+            # Dọn dẹp file rác nếu tải thất bại
+            try:
+                if os.path.exists(mp4_path) and os.path.getsize(mp4_path) == 0:
+                    os.remove(mp4_path)
+            except Exception:
+                pass
 
         if on_progress:
             on_progress(task_data)
 
         return task_data
+
 
     def _sync_download(
         self,
