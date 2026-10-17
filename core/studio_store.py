@@ -24,7 +24,7 @@ STYLE = dict(font='DejaVu Sans', size=42, bold=True, color='#FFFFFF', outline_co
 DEFAULT = dict(style=STYLE, voice=VOICE, speakers={}, clone_consent=False,
                mix={'voice_volume': 1.0, 'bg_volume': 0.15, 'ducking': True},
                render={'start': 0, 'end': None, 'speed': 1, 'aspect': 'original', 'dubbed': False, 'subtitles': True},
-               reading_speed=20)
+               reading_speed=20, timing={'max_speed': 1.65, 'max_overlap': 1.0}, caption_hold=12)
 
 class Conflict(ValueError):
     pass
@@ -168,6 +168,9 @@ def validate(data, duration):
     for key in ('voice_volume', 'bg_volume'):
         cfg['mix'][key] = number(cfg['mix'][key], 0, 3, key)
     cfg['reading_speed'] = number(cfg['reading_speed'], 1, 100, 'Tốc độ đọc')
+    cfg['timing']['max_speed'] = number(cfg['timing']['max_speed'], 1, 1.65, 'Tốc độ giọng tối đa')
+    cfg['timing']['max_overlap'] = number(cfg['timing']['max_overlap'], 0, 1, 'Chồng tiếng tối đa')
+    cfg['caption_hold'] = number(cfg['caption_hold'], 10, 15, 'Thời gian hiện phụ đề')
     render = cfg['render']
     render['start'] = number(render['start'], 0, duration, 'Trim bắt đầu')
     if render['end'] is not None:
@@ -267,16 +270,20 @@ def audio_key(data, seg, source_fingerprint=''):
         payload['reference'] = [source_fingerprint, seg['start'], seg['end']]
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
+def timing_key(data):
+    cfg = data['studio_config']
+    payload = {'version': 2, 'speed': cfg['render']['speed'], 'timing': cfg['timing'],
+               'segments': [(s['id'], s['start'], s['end'], bool(dub_text(s, data.get('detected_language'))))
+                            for s in sorted(data['segments'], key=lambda s: (s['start'], s['end'], s['id']))]}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
 def warnings(data, media_info=None):
     from .studio_media import wrapped
     result = []
     ordered = sorted(data['segments'], key=lambda s: s['start'])
-    end = 0
     for seg in ordered:
         text = seg.get('vietnamese') or source_text(seg)
         issues = []
-        if seg['start'] < end:
-            issues.append('Câu chồng thời gian')
         style = data['studio_config']['style']
         aspect=data['studio_config']['render']['aspect']
         ratio=(media_info['width']/media_info['height']) if media_info else 16/9
@@ -288,9 +295,6 @@ def warnings(data, media_info=None):
             line_count+=len(wrapped(source_text(seg),available,style['secondary_size']))
         if line_count > 2:
             issues.append('Vượt hai dòng')
-        if len(text) / max(.001, seg['end'] - seg['start']) > data['studio_config']['reading_speed']:
-            issues.append('Đọc không kịp')
-        end = max(end, seg['end'])
         if issues:
             result.append({'id': seg['id'], 'messages': issues})
     return result

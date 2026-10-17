@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import numpy as np
 from . import studio_store as store, studio_media as media
+from .dub_timing import schedule
 from .tts_runtime import library as voice_library, ProviderUnavailable
 
 TERMINAL = {'completed', 'partial', 'error', 'cancelled', 'interrupted'}
@@ -90,6 +91,7 @@ class StudioService:
         manifest = self.manifest(video)
         assets = store.paths(video)[2]
         entries = {}
+        timing_key = store.timing_key(data)
         for seg in data['segments']:
             entry = copy.deepcopy(manifest.get(seg['id'], {}))
             key = store.audio_key(data, seg, self.fingerprint(video))
@@ -100,12 +102,58 @@ class StudioService:
                 entry = {'status': 'missing'}
             elif entry.get('key') != key:
                 entry['status'] = 'stale'
+            elif entry.get('timing_key') != timing_key:
+                entry['status'] = 'needs_alignment'
             elif entry.get('start') != seg['start'] or entry.get('end') != seg['end']:
                 entry['status'] = 'needs_alignment'
             elif entry.get('status') == 'ready' and entry.get('aligned') and not Path(self.check(assets / entry['aligned'])).exists():
                 entry['status'] = 'missing'
             entries[seg['id']] = entry
         return entries
+
+    def realign(self, video, data, manifest, assets, event):
+        """Rebuild every available aligned cue from raw cache and the whole timeline."""
+        cache = assets / 'audio'
+        fingerprint = self.fingerprint(video)
+        available = []
+        for seg in data['segments']:
+            if not store.dub_text(seg, data.get('detected_language')):
+                continue
+            key = store.audio_key(data, seg, fingerprint)
+            raw = Path(self.check(cache / (key + '.wav')))
+            if raw.exists():
+                with wave.open(str(raw), 'rb') as audio:
+                    duration = audio.getnframes() / audio.getframerate()
+                if duration > 0:
+                    available.append(dict(id=seg['id'], start=seg['start'], end=seg['end'], duration=duration))
+        cfg = data['studio_config']
+        timing_key = store.timing_key(data)
+        plan = schedule(available, cfg['render']['speed'], cfg['timing']['max_speed'],
+                        cfg['timing']['max_overlap'], media.probe(video)['duration'])
+        for seg in data['segments']:
+            cue = plan.get(seg['id'])
+            if cue is None:
+                continue
+            key = store.audio_key(data, seg, fingerprint)
+            raw = Path(self.check(cache / (key + '.wav')))
+            name = f'audio/{key}-{timing_key[:16]}.wav'
+            target = Path(self.check(assets / name))
+            old = manifest.get(seg['id'], {})
+            if (old.get('key') == key and old.get('timing_key') == timing_key
+                    and old.get('status') == 'ready' and target.exists()):
+                continue
+            staged = target.with_name(target.stem + '.tmp.wav')
+            try:
+                info = media.align_audio(raw, staged, cue['speed'] / cfg['render']['speed'], event.is_set)
+                if event.is_set():
+                    raise media.Cancelled()
+                os.replace(staged, target)
+            finally:
+                staged.unlink(missing_ok=True)
+            manifest[seg['id']] = {**cue, **info, 'key': key, 'timing_key': timing_key,
+                                   'start': seg['start'], 'end': seg['end'], 'aligned': name}
+        store.atomic_json(assets / 'audio.json', manifest)
+        return manifest
 
     def project(self, filepath):
         video = self.resolve(filepath)
@@ -115,8 +163,22 @@ class StudioService:
             versions = store.paths(video)[2] / 'versions'
             revisions = [int(p.stem) for p in sorted(versions.glob('*.json'), reverse=True)] if versions.exists() else []
         info=media.probe(video)
+        warnings = store.warnings(data, info)
+        by_id = {item['id']: item['messages'] for item in warnings}
+        for sid, entry in audio.items():
+            if entry.get('status') != 'ready':
+                continue
+            details = []
+            if entry.get('speed', 1) > 1.01:
+                details.append(f'Tăng tốc {entry["speed"]:.2f}×')
+            if entry.get('overlap', 0) > .05:
+                details.append(f'Chồng {entry["overlap"]:.1f} giây')
+            if entry.get('delay', 0) > .05:
+                details.append(f'Trễ {entry["delay"]:.1f} giây')
+            by_id.setdefault(sid, []).extend(details)
         return {'filepath': filepath, 'project': data, 'media': info,
-                'audio': audio, 'warnings': store.warnings(data,info), 'versions': revisions}
+                'audio': audio, 'warnings': [{'id': sid, 'messages': messages} for sid, messages in by_id.items() if messages],
+                'versions': revisions}
 
     def save(self, filepath, expected, data, restore_revision=None):
         video = self.resolve(filepath)
@@ -311,8 +373,7 @@ class StudioService:
                 await asyncio.sleep(.1)
             key = store.audio_key(data, seg, self.fingerprint(video))
             raw = Path(self.check(cache / (key + '.wav')))
-            aligned_name = f'audio/{key}-{seg["start"]}-{seg["end"]}.wav'
-            entry = dict(key=key, start=seg['start'], end=seg['end'], aligned=aligned_name)
+            entry = dict(key=key, start=seg['start'], end=seg['end'])
             try:
                 if event.is_set():
                     raise media.Cancelled()
@@ -366,15 +427,9 @@ class StudioService:
                             raise ValueError('Audio trống')
                     os.replace(staged, raw)
                     encoded.unlink(missing_ok=True)
-                entry.update(media.align_audio(raw, self.check(assets / aligned_name), seg['end']-seg['start'], event.is_set))
                 if event.is_set():
                     raise media.Cancelled()
-                manifest[seg['id']] = entry
-                store.atomic_json(assets / 'audio.json', manifest)
-                if entry['status'] != 'ready':
-                    job['failed'].append({'id': seg['id'], 'error': 'Lời đọc quá dài; hãy rút gọn hoặc kéo dài câu'})
-                else:
-                    job['completed'].append(seg['id'])
+                job['completed'].append(seg['id'])
             except media.Cancelled:
                 raise
             except Exception as error:
@@ -382,7 +437,7 @@ class StudioService:
                     blocked_providers[error.provider] = error
                     job.setdefault('provider_errors', {})[error.provider] = str(error)
                 public = str(error) if isinstance(error, ValueError) else f'{type(error).__name__}: Không tạo được giọng. Kiểm tra kết nối/provider.'
-                entry.update(status='error', error=public)
+                entry.update(status='error', timing_key=store.timing_key(data), error=public)
                 manifest[seg['id']] = entry
                 store.atomic_json(assets / 'audio.json', manifest)
                 job['failed'].append({'id': seg['id'], 'error': public})
@@ -391,7 +446,14 @@ class StudioService:
                 job['progress'] = round(100 * (len(job['completed'])+len(job['failed'])) / max(1,len(selected)))
                 self.update(job)
         # Conversion is short but blocking; network requests overlap, at most two.
-        await asyncio.gather(*(sentence(seg) for seg in selected))
+        results = await asyncio.gather(*(sentence(seg) for seg in selected), return_exceptions=True)
+        if event.is_set():
+            raise media.Cancelled()
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+        if job['completed']:
+            self.realign(video, data, manifest, assets, event)
 
     async def translate(self, job, event):
         data = job['snapshot']
@@ -443,12 +505,18 @@ class StudioService:
         track = None
         if data['studio_config']['render']['dubbed']:
             entries = self.audio_status(video, data)
+            if any(e['status'] == 'needs_alignment' for e in entries.values()):
+                self.realign(video, data, self.manifest(video), assets, event)
+                entries = self.audio_status(video, data)
             start = data['studio_config']['render']['start']
             end = data['studio_config']['render']['end'] or media.probe(video)['duration']
             if job['kind']=='preview':
                 start = max(start, min(end-.1, job['options'].get('at', 0)-2.5*data['studio_config']['render']['speed']))
                 end = min(end,start+5*data['studio_config']['render']['speed'])
-            required = [s for s in data['segments'] if s['end']>start and s['start']<end and (store.dub_text(s,data.get('detected_language')) or store.source_text(s))]
+            required = [s for s in data['segments'] if (s['end']>start and s['start']<end
+                        or entries[s['id']].get('play_end',s['end'])>start
+                        and entries[s['id']].get('play_start',s['start'])<end)
+                        and (store.dub_text(s,data.get('detected_language')) or store.source_text(s))]
             bad = [s for s in required if entries[s['id']]['status'] not in ('ready','empty') or entries[s['id']]['status']=='empty']
             if bad and not (job['kind']=='preview' and job['options'].get('skip_errors')):
                 raise ValueError(f'{len(bad)} câu chưa có giọng hợp lệ. Tạo giọng/căn lại trước khi xuất.')
@@ -458,7 +526,8 @@ class StudioService:
             media.make_voice_track(track_data, entries, assets, track, media.probe(video)['duration'], event.is_set)
         output = work / 'output.mp4'
         result = media.render(video, data, output, work, event.is_set, track,
-                              job['options'].get('at',0) if job['kind']=='preview' else None)
+                              job['options'].get('at',0) if job['kind']=='preview' else None,
+                              entries if track else None)
         if event.is_set():
             raise media.Cancelled()
         # Every revision has its own artifact, leaving previous good exports intact.

@@ -89,6 +89,10 @@ uvicorn.run(server.app,host='127.0.0.1',port=int(sys.argv[2]),log_level='warning
                 page.locator('.ns').get_by_role('button',name='Tạo giọng cho 2 câu cần cập nhật',exact=True).click()
                 expect(page.locator('.ns .job')).to_contain_text('Hoàn tất',timeout=20000)
                 page.screenshot(path=str(output/'ui-studio.png'),full_page=True)
+                page.locator('.ns').get_by_role('button',name='Tiếp tục: Xuất video').click()
+                expect(page.locator('.ns').get_by_label('Tốc độ giọng tối đa')).to_have_value('1.65')
+                expect(page.locator('.ns').get_by_label('Chồng tiếng tối đa (giây)')).to_have_value('1')
+                expect(page.locator('.ns').get_by_label('Tự ẩn phụ đề sau (giây)')).to_have_value('12')
                 assert page.locator('#batchVoiceSelect option').evaluate_all("opts=>opts.some(o=>o.value.startsWith('vieneu:custom:'))")
                 assert page.locator('#dubVoiceSelect option').evaluate_all("opts=>opts.some(o=>o.value.startsWith('vieneu:custom:'))")
                 assert not errors, errors

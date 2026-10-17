@@ -11,7 +11,8 @@ MEDIA_SUFFIXES = tuple(sorted((
 ), key=len, reverse=True))
 COMPANION_SUFFIXES = MEDIA_SUFFIXES + (
     '.json', '.thumb.jpg', '.transcript.json', '.transcript.txt',
-    '.studio.json', '.srt', '.vi.srt', '.bilingual.srt', '.dubbed.mp3', '.accompaniment.mp3',
+    '.studio.json', '.srt', '.vi.srt', '.bilingual.srt', '.dubbed.vi.srt', '.dubbed.bilingual.srt',
+    '.dubbed.mp3', '.accompaniment.mp3',
 )
 
 def is_source(name, names):

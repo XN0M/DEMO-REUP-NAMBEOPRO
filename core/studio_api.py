@@ -160,18 +160,27 @@ def attach(host, database=None):
         data = store.load(video)
         info = media.probe(video)
         options = data['studio_config']['render']
+        entries = service.audio_status(video, data) if options['dubbed'] else None
         start, end, speed = options['start'], options['end'] or info['duration'], options['speed']
+        if entries:
+            eligible = {seg['id'] for seg in data['segments'] if seg['start'] < end and seg['end'] > start}
+            end = max(end, max((entry.get('play_end', end) for sid, entry in entries.items()
+                                if entry.get('status') == 'ready' and sid in eligible
+                                and entry.get('play_end', 0) > start), default=end))
         if format=='ass':
             w,h=info['width'],info['height']
             if options['aspect']!='original':
                 a,b=map(float,options['aspect'].split(':'))
                 w,h=(int(h*a/b),h) if w/h>a/b else (w,int(w*b/a))
-            content=media.ass_document(data,w//2*2,h//2*2,start,end,speed)
+            content=media.ass_document(data,w//2*2,h//2*2,start,end,speed,entries)
         else:
             from .transcriber import DouyinTranscriber
             segments=[]
+            from .dub_timing import captions
+            windows = captions(data['segments'], data['studio_config'], entries)
             for seg in data['segments']:
-                a,b=max(start,seg['start']),min(end,seg['end'])
+                cue_start,cue_end = windows[seg['id']]
+                a,b=max(start,cue_start),min(end,cue_end)
                 if b>a:
                     text=seg.get('vietnamese') or store.source_text(seg)
                     if data['studio_config']['style']['bilingual'] and seg.get('vietnamese'):
@@ -179,7 +188,7 @@ def attach(host, database=None):
                         if not data['studio_config']['style']['translated_first']: pair.reverse()
                         text='\n'.join(pair)
                     segments.append(dict(start=(a-start)/speed,end=(b-start)/speed,text=text))
-            content=DouyinTranscriber.generate_srt(segments,'text')
+            content=DouyinTranscriber.generate_srt(segments,'text',data['studio_config']['caption_hold'])
         return Response(content,media_type='text/plain; charset=utf-8',headers={'Content-Disposition':f'attachment; filename="captions.{format}"'})
 
     host.app.include_router(router)

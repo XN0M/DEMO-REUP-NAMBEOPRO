@@ -32,14 +32,19 @@ class DouyinTranscriber:
         return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
     @staticmethod
-    def generate_srt(segments: List[Dict], lang_field: str = "text") -> str:
+    def generate_srt(segments: List[Dict], lang_field: str = "text", max_hold: float = 12) -> str:
         """Generate standard SRT subtitle string."""
         lines = []
-        for i, seg in enumerate(segments, start=1):
+        ordered = sorted(segments, key=lambda seg: (seg['start'], seg['end']))
+        for i, seg in enumerate(ordered, start=1):
             start_str = DouyinTranscriber.format_srt_time(seg["start"])
-            end_str = DouyinTranscriber.format_srt_time(seg["end"])
+            next_start = ordered[i]['start'] if i < len(ordered) else float('inf')
+            end = min(seg['end'], seg['start'] + max_hold, next_start)
+            if end <= seg['start']:
+                continue
+            end_str = DouyinTranscriber.format_srt_time(end)
             text = seg.get(lang_field) or seg.get("text", "")
-            lines.append(f"{i}\n{start_str} --> {end_str}\n{text}\n")
+            lines.append(f"{len(lines)+1}\n{start_str} --> {end_str}\n{text}\n")
         return "\n".join(lines)
 
     @staticmethod

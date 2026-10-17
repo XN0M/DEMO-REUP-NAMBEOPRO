@@ -111,9 +111,11 @@ mà không tự chuyển đổi dữ liệu trên ổ đĩa.
   xuất hardsub để giữ hình thức.
 - Lưu style theo video, preset cá nhân lưu trong trình duyệt. Giữ 20 phiên bản
   đã lưu, cùng backup transcript trước lần lưu đầu. Khôi phục tạo revision mới.
-- TTS chỉ tạo lại nội dung/giọng thay đổi, căn thời gian từ audio cache khi kéo
-  cue. Giới hạn hai yêu cầu đồng thời; tăng tốc tối đa 1,15×. Câu quá dài phải
-  được rút gọn hoặc kéo dài thời gian, không cắt đuôi audio.
+- TTS chỉ tạo lại nội dung/giọng thay đổi. Lịch phát tự tận dụng khoảng nghỉ,
+  tăng tốc tối đa 1,65× và cho tối đa hai câu chồng nhau trong một giây. Câu dài
+  vẫn được đọc hết; Studio báo tốc độ/chồng/trễ và giữ hình cuối khi cần.
+- Phụ đề tự ẩn sau tối đa 12 giây (chỉnh được 10–15 giây), hoặc sớm hơn khi
+  câu kết thúc hay câu tiếp theo bắt đầu. Khi lồng tiếng, phụ đề theo lịch phát.
 - Bật **Dùng bản lồng tiếng** để phối giọng và nền khi xuất. Bản xuất hoàn chỉnh
   bị chặn khi thiếu giọng; bản thử có lựa chọn bỏ qua câu lỗi rõ ràng.
 - Job lưu SQLite ở `.runtime/studio.sqlite3`; job bị gián đoạn sau restart có
@@ -171,8 +173,9 @@ Worker chỉ lắng nghe localhost, có token riêng và tự giải phóng sau 
 không dùng. VieNeu chạy lần lượt và chia sẻ lượt GPU với OmniVoice/Demucs.
 Không tự đổi sang giọng hay provider khác khi gặp lỗi. Cache phụ thuộc lời
 đọc, giọng, nội dung mẫu và phiên bản engine; đổi tên giọng không tạo lại câu.
-VieNeu ở luồng nhanh/batch cũng giới hạn tăng tốc 1,15×; câu dài cần sửa trong
-Studio. Cơ chế giảm nền/tách giọng hiện có vẫn được sử dụng.
+VieNeu và Edge ở luồng nhanh/batch dùng cùng lịch tăng tốc tối đa 1,65×;
+câu dài giữ đủ lời và kéo dài hình cuối nếu cần. Cơ chế giảm nền/tách giọng
+hiện có vẫn được sử dụng.
 
 API bổ sung: `/api/tts/status`, `/install`, `/device`, `/log` và
 `/voices/custom` (GET/POST), `/voices/custom/{id}` (PATCH/DELETE),

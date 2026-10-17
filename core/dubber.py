@@ -395,7 +395,8 @@ class DouyinDubber:
         clean_bgm: bool = False,
         openai_api_key: str = "",
         openai_base_url: str = "",
-        task_id: str = ""
+        task_id: str = "",
+        video_speed: float = 1.0
     ) -> Dict:
         """
         Execute full dubbing workflow:
@@ -406,6 +407,9 @@ class DouyinDubber:
         5. FFmpeg audio ducking mux with video
         """
         character_voices = character_voices or {}
+        video_speed = float(video_speed)
+        if not .5 <= video_speed <= 2:
+            raise ValueError('Tốc độ video phải nằm trong 0,5–2×')
         self.tasks[task_id] = {
             "status": "processing",
             "progress": 5,
@@ -439,7 +443,7 @@ class DouyinDubber:
             if video_dur <= 0:
                 video_dur = transcript_data.get("duration", 0)
             max_seg_end = max(s["end"] for s in valid_segments)
-            total_duration = max(video_dur, max_seg_end + 1.0)
+            total_duration = max(video_dur, max_seg_end)
 
             total_frames = int(math.ceil(total_duration * self.sample_rate))
             master_buffer = bytearray(total_frames * self.frame_size)
@@ -464,7 +468,8 @@ class DouyinDubber:
                 elif is_female:
                     char_gender_hint[c.get("name")] = "female"
 
-            # 3. Process each segment
+            # 3. Synthesize first; measured lengths determine the shared playback schedule.
+            prepared = []
             for idx, seg in enumerate(valid_segments):
                 text = seg["dub_text"]
                 start_sec = float(seg["start"])
@@ -524,23 +529,35 @@ class DouyinDubber:
                 # Convert to standard WAV
                 self._convert_mp3_to_wav(seg_mp3, seg_wav)
 
-                # Duration check & stretch
+                # Save raw duration; alignment uses the following cue and available silence.
                 dur, frames = self._get_wav_duration_and_frames(seg_wav)
-                if provider == 'vieneu' and dur > slot_duration * 1.15:
-                    raise TTSError(f'Câu {idx+1} quá dài; hãy rút gọn lời đọc hoặc kéo dài thời gian trong Studio')
-                if dur > slot_duration and slot_duration >= 0.4:
-                    speed = dur / slot_duration
-                    speed = min(1.15 if provider == 'vieneu' else 1.65, speed)
-                    if speed >= (1.0 if provider == 'vieneu' else 1.05):
-                        stretched_wav = os.path.join(temp_dir, f"seg_{idx}_stretched.wav")
-                        self._stretch_wav(seg_wav, stretched_wav, speed)
-                        dur, frames = self._get_wav_duration_and_frames(stretched_wav)
-                if provider == 'vieneu' and dur > slot_duration + .02:
-                    raise TTSError(f'Câu {idx+1} vẫn quá dài sau căn thời gian; hãy sửa trong Studio')
+                prepared.append({'id': str(idx), 'start': start_sec, 'end': end_sec,
+                                 'duration': dur, 'path': seg_wav})
 
-                # Paste into master buffer at start_sec
-                start_byte = int(start_sec * self.sample_rate) * self.frame_size
+                # Update progress
+                cur_prog = 10 + int(60 * (idx + 1) / total_segs)
+                self.tasks[task_id]["progress"] = cur_prog
+                self.tasks[task_id]["message"] = f"Đã tạo giọng câu {idx+1}/{total_segs}"
+
+            from .dub_timing import schedule
+            play = schedule(prepared, video_speed=video_speed, video_end=video_dur)
+            self.tasks[task_id]['timing'] = play
+            self.tasks[task_id]['extended_seconds'] = max(0, max(p['play_end'] for p in play.values()) - video_dur)
+            latest_audio_end = 0.0
+            for idx, item in enumerate(prepared):
+                timing = play[item['id']]
+                seg_wav = item['path']
+                tempo_factor = timing['speed'] / video_speed
+                if abs(tempo_factor - 1) > .001:
+                    stretched_wav = os.path.join(temp_dir, f"seg_{idx}_stretched.wav")
+                    self._stretch_wav(seg_wav, stretched_wav, tempo_factor)
+                    seg_wav = stretched_wav
+                _, frames = self._get_wav_duration_and_frames(seg_wav)
+                # Leave headroom before adding two concurrent 16-bit voices.
+                frames = audioop.mul(frames, self.sampwidth, .5)
+                start_byte = int(timing['play_start'] * self.sample_rate) * self.frame_size
                 end_byte = start_byte + len(frames)
+                latest_audio_end = max(latest_audio_end, end_byte / self.frame_size / self.sample_rate)
 
                 if end_byte > len(master_buffer):
                     # Extend buffer if needed
@@ -551,10 +568,11 @@ class DouyinDubber:
                 mixed = audioop.add(target_chunk, frames, self.sampwidth)
                 master_buffer[start_byte:end_byte] = mixed
 
-                # Update progress
-                cur_prog = 10 + int(70 * (idx + 1) / total_segs)
-                self.tasks[task_id]["progress"] = cur_prog
-                self.tasks[task_id]["message"] = f"Đã lồng tiếng câu {idx+1}/{total_segs} ({int((idx+1)/total_segs*100)}%)"
+                self.tasks[task_id]["progress"] = 70 + int(10 * (idx + 1) / total_segs)
+                self.tasks[task_id]["message"] = f"Đã căn giọng câu {idx+1}/{total_segs}"
+
+            self.tasks[task_id]['extended_seconds'] = max(
+                self.tasks[task_id]['extended_seconds'], latest_audio_end - video_dur)
 
             # 4. Save master audio track
             self.tasks[task_id]["progress"] = 82
@@ -608,7 +626,7 @@ class DouyinDubber:
                     filter_complex = (
                         f"[2:a]volume={bg_volume:.2f}[bg];"
                         f"[1:a]volume={voice_volume:.2f}[fg];"
-                        f"[bg][fg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                        f"[bg][fg]amix=inputs=2:duration=longest:dropout_transition=2[aout]"
                     )
                     cmd_mux = [
                         ffmpeg_exe, "-y",
@@ -628,7 +646,7 @@ class DouyinDubber:
                     filter_complex = (
                         f"[0:a]volume={bg_volume:.2f}[bg];"
                         f"[1:a]volume={voice_volume:.2f}[fg];"
-                        f"[bg][fg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                        f"[bg][fg]amix=inputs=2:duration=longest:dropout_transition=2[aout]"
                     )
                     cmd_mux = [
                         ffmpeg_exe, "-y",
@@ -660,6 +678,14 @@ class DouyinDubber:
                     dubbed_video_path
                 ]
 
+            tail = self.tasks[task_id]['extended_seconds']
+            if tail > .01:
+                graph = cmd_mux[cmd_mux.index('-filter_complex') + 1]
+                cmd_mux[cmd_mux.index('-filter_complex') + 1] = graph + f';[0:v]tpad=stop_mode=clone:stop_duration={tail:.6f}[vout]'
+                cmd_mux[cmd_mux.index('-map') + 1] = '[vout]'
+                cmd_mux[cmd_mux.index('-c:v') + 1] = 'libx264'
+                cmd_mux[cmd_mux.index('-c:v') + 2:cmd_mux.index('-c:v') + 2] = ['-preset', 'fast', '-crf', '20']
+            cmd_mux[-1:-1] = ['-t', str(video_dur + tail)]
             res_mux = subprocess.run(cmd_mux, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if res_mux.returncode != 0:
                 err_msg = res_mux.stderr.decode("utf-8", errors="ignore")
@@ -668,6 +694,24 @@ class DouyinDubber:
             # Publish only after successful mux; retain previous outputs on failure.
             os.replace(dubbed_video_path, final_video_path)
             os.replace(dubbed_mp3_path, final_mp3_path)
+            from .dub_timing import captions
+            from .transcriber import DouyinTranscriber
+            cues = [{**seg, 'id': str(index)} for index, seg in enumerate(valid_segments)]
+            windows = captions(cues, {'render': {'dubbed': True, 'speed': video_speed}, 'caption_hold': 12},
+                               {key: {'status': 'ready', **value} for key, value in play.items()})
+            for lang in ('vi', 'bilingual'):
+                subtitle_cues = []
+                for seg in cues:
+                    original = seg.get('chinese') or seg.get('text') or ''
+                    spoken = seg.get('vietnamese') or seg.get('dub_text') or original
+                    caption = spoken if lang == 'vi' else '\n'.join(filter(None, [spoken, original]))
+                    a, b = windows[seg['id']]
+                    if caption and b > a:
+                        subtitle_cues.append({'start': a, 'end': b, 'text': caption})
+                staged_srt = os.path.join(temp_dir, f'{lang}.srt')
+                with open(staged_srt, 'w', encoding='utf-8') as stream:
+                    stream.write(DouyinTranscriber.generate_srt(subtitle_cues, max_hold=12*video_speed))
+                os.replace(staged_srt, f'{base_name}.dubbed.{lang}.srt')
             dubbed_video_path, dubbed_mp3_path = final_video_path, final_mp3_path
             self.tasks[task_id]["status"] = "completed"
             self.tasks[task_id]["progress"] = 100

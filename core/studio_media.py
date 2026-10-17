@@ -10,7 +10,9 @@ import wave
 from pathlib import Path
 import cv2
 import imageio_ffmpeg
+import numpy as np
 from .studio_store import source_text
+from .dub_timing import captions
 
 FONT_DIR = Path(__file__).resolve().parents[1] / 'web' / 'fonts'
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
@@ -47,7 +49,7 @@ def probe(video):
         cap.release()
     if width <= 0 or height <= 0 or fps <= 0:
         raise ValueError('Không đọc được video')
-    return {'width': width, 'height': height, 'duration': frames / fps}
+    return {'width': width, 'height': height, 'duration': frames / fps, 'fps': fps}
 
 def has_audio(path):
     process = subprocess.run([FFMPEG, '-i', str(path)], capture_output=True)
@@ -68,7 +70,7 @@ def wrapped(text, width, size):
     columns = max(5, int(width / (size * .57)))
     return [line for paragraph in plain(text).split('\n') for line in (textwrap.wrap(paragraph, columns, break_long_words=True) or [''])]
 
-def ass_document(data, width, height, start, end, speed):
+def ass_document(data, width, height, start, end, speed, entries=None):
     style = data['studio_config']['style']
     # Font sizes use a reference height of 1080; scale identically in both renders.
     size, secondary = style['size'] * height / 1080, style['secondary_size'] * height / 1080
@@ -94,8 +96,10 @@ Style: Default,DejaVu Sans,{size},{color(style['color'])},{color(style['color'])
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 '''
     events = []
+    windows = captions(data['segments'], data['studio_config'], entries)
     for seg in data['segments']:
-        a, b = max(start, seg['start']), min(end, seg['end'])
+        cue_start, cue_end = windows[seg['id']]
+        a, b = max(start, cue_start), min(end, cue_end)
         if b <= a:
             continue
         vi, original = seg.get('vietnamese', ''), source_text(seg)
@@ -129,46 +133,57 @@ def atempo(speed):
         filters.append('atempo=0.5'); speed *= 2
     return ','.join(filters + [f'atempo={speed:.8f}'])
 
-def align_audio(raw, output, slot, cancelled):
+def align_audio(raw, output, speed, cancelled):
     with wave.open(str(raw), 'rb') as audio:
         duration = audio.getnframes() / audio.getframerate()
     if duration <= 0:
         raise ValueError('Audio trống')
-    factor = max(1, duration / slot)
-    if factor > 1.15:
-        return {'status': 'needs_timing', 'duration': duration, 'required_speed': factor}
-    run(['-i', raw, '-af', atempo(factor), '-ac', '1', '-ar', '24000', '-c:a', 'pcm_s16le', output], cancelled)
+    run(['-i', raw, '-af', atempo(speed), '-ac', '1', '-ar', '24000', '-c:a', 'pcm_s16le', output], cancelled)
     with wave.open(str(output), 'rb') as aligned:
         fitted = aligned.getnframes() / aligned.getframerate()
-    if fitted > slot + 1/24000:
-        return {'status': 'needs_timing', 'duration': duration, 'required_speed': factor,
-                'error': 'Audio sau căn vẫn vượt thời lượng; hãy kéo dài câu hoặc rút gọn lời đọc'}
-    return {'status': 'ready', 'duration': duration, 'speed': factor}
+    return {'status': 'ready', 'duration': duration, 'aligned_duration': fitted, 'tempo_factor': speed}
 
 def make_voice_track(data, entries, assets, output, duration, cancelled):
-    # Place non-overlapping PCM cues using a sparse file, avoiding whole-video RAM allocations.
+    # Accumulate in a disk-backed array: adjacent cues may overlap without overwriting each other.
     pcm = Path(output).with_suffix('.pcm')
+    counts_path = Path(output).with_suffix('.counts')
     ordered = sorted(data['segments'], key=lambda seg: seg['start'])
-    previous_end = 0
-    with open(pcm, 'w+b') as stream:
-        stream.truncate(math.ceil(duration * 24000) * 2)
+    frames_total = max(1, math.ceil(max([duration] + [max(entries[s['id']].get('play_end', 0),
+        entries[s['id']].get('play_start', s['start']) + entries[s['id']].get('aligned_duration', 0))
+        for s in ordered if s['id'] in entries and entries[s['id']]['status'] == 'ready']) * 24000) + 2400)
+    accumulator = np.memmap(pcm, dtype='<i4', mode='w+', shape=(frames_total,))
+    counts = np.memmap(counts_path, dtype='u1', mode='w+', shape=(frames_total,))
+    accumulator[:] = 0
+    counts[:] = 0
+    try:
         for seg in ordered:
             entry = entries.get(seg['id'])
             if not entry or entry['status'] != 'ready':
                 continue
-            if seg['start'] < previous_end - .001:
-                raise ValueError('Các câu lồng tiếng chồng thời gian; hãy sửa trước khi xuất')
-            previous_end = seg['end']
             if cancelled():
                 raise Cancelled()
             with wave.open(str(assets / entry['aligned']), 'rb') as audio:
                 frames = audio.readframes(audio.getnframes())
-            stream.seek(round(seg['start'] * 24000) * 2)
-            stream.write(frames)
-    run(['-f', 's16le', '-ar', '24000', '-ac', '1', '-i', pcm, '-c:a', 'pcm_s16le', output], cancelled)
-    pcm.unlink(missing_ok=True)
+            samples = np.frombuffer(frames, dtype='<i2').astype(np.int32)
+            offset = round(entry.get('play_start', seg['start']) * 24000)
+            last = min(frames_total, offset + len(samples))
+            accumulator[offset:last] += samples[:last-offset]
+            counts[offset:last] += 1
+        with wave.open(str(output), 'wb') as stream:
+            stream.setnchannels(1); stream.setsampwidth(2); stream.setframerate(24000)
+            for offset in range(0, frames_total, 240000):
+                if cancelled():
+                    raise Cancelled()
+                end = min(frames_total, offset + 240000)
+                chunk = accumulator[offset:end].astype(np.float32)
+                np.divide(chunk, np.maximum(counts[offset:end], 1), out=chunk)
+                stream.writeframes(np.clip(chunk, -32768, 32767).astype('<i2').tobytes())
+    finally:
+        del accumulator, counts
+        pcm.unlink(missing_ok=True)
+        counts_path.unlink(missing_ok=True)
 
-def render(video, data, output, work, cancelled, voice_track=None, preview_at=None):
+def render(video, data, output, work, cancelled, voice_track=None, preview_at=None, entries=None):
     info = probe(video)
     cfg, style = data['studio_config'], data['studio_config']['style']
     options = cfg['render']
@@ -176,6 +191,10 @@ def render(video, data, output, work, cancelled, voice_track=None, preview_at=No
     if preview_at is not None:
         start = max(start, min(end - .1, preview_at - 2.5 * speed))
         end = min(end, start + 5 * speed)
+    eligible = {seg['id'] for seg in data['segments'] if seg['start'] < end and seg['end'] > start}
+    tail = max(0.0, max((max(entry.get('play_end', 0), entry.get('play_start', 0) + entry.get('aligned_duration', 0))
+                         for sid, entry in (entries or {}).items() if sid in eligible and entry.get('status') == 'ready'
+                         and entry.get('play_end', 0) > start), default=end) - end) if voice_track else 0.0
     width, height = info['width'], info['height']
     aspect = options['aspect']
     crop = ''
@@ -189,12 +208,12 @@ def render(video, data, output, work, cancelled, voice_track=None, preview_at=No
         crop = f',crop={width}:{height}'
     width, height = width // 2 * 2, height // 2 * 2
     ass = work / 'captions.ass'
-    ass.write_text(ass_document(data, width, height, start, end, speed), encoding='utf-8-sig')
+    ass.write_text(ass_document(data, width, height, start, end + tail, speed, entries), encoding='utf-8-sig')
     # Only fixed, validated paths enter the subtitle filter. FFmpeg runs from its work directory.
     import shutil
     for font in FONT_DIR.glob('*.ttf'):
         shutil.copy2(font, work / font.name)
-    filters = [f'[0:v]trim=start={start}:end={end},setpts=(PTS-STARTPTS)/{speed}{crop},scale={width}:{height}[base]']
+    filters = [f'[0:v]trim=start={start}:end={end},setpts=(PTS-STARTPTS)/{speed}{crop},scale={width}:{height},fps={info["fps"]:.6f},tpad=stop_mode=clone:stop_duration={tail/speed}[base]']
     tag = 'base'
     if style['mask']:
         x, y = int(style['mask_x'] * width), int(style['mask_y'] * height)
@@ -220,13 +239,14 @@ def render(video, data, output, work, cancelled, voice_track=None, preview_at=No
                 filters.append('[bg][voice]amix=inputs=2:duration=longest:normalize=0[mix]')
         else:
             filters.append('[voice]anull[mix]')
-        filters.append(f'[mix]atrim=start={start}:end={end},asetpts=PTS-STARTPTS,{atempo(speed)},alimiter=limit=0.95[a]')
+        filters.append(f'[mix]atrim=start={start}:end={end+tail},asetpts=PTS-STARTPTS,{atempo(speed)},alimiter=limit=0.95[a]')
         audio_map = ['-map', '[a]', '-c:a', 'aac']
     elif has_audio(video):
         filters.append(f'[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS,{atempo(speed)}[a]')
         audio_map = ['-map', '[a]', '-c:a', 'aac']
-    args += ['-filter_complex', ';'.join(filters), '-map', '[v]', *audio_map, '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p', '-t', (end-start)/speed, '-movflags', '+faststart', output]
+    args += ['-filter_complex', ';'.join(filters), '-map', '[v]', *audio_map, '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p', '-t', (end+tail-start)/speed, '-movflags', '+faststart', output]
     run(args, cancelled, cwd=work)
     if probe(output)['duration'] <= 0:
         raise ValueError('File xuất không hợp lệ')
-    return {'start': start, 'end': end, 'speed': speed, 'width': width, 'height': height}
+    return {'start': start, 'end': end, 'speed': speed, 'width': width, 'height': height,
+            'extended_seconds': tail/speed, 'duration': (end+tail-start)/speed}

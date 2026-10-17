@@ -1441,7 +1441,7 @@ async def execute_dubbing(req: DubExecuteRequest):
                 dub_video = dubber.tasks[task_id]["dubbed_video"]
                 if os.path.exists(dub_video):
                     lang = req.sub_lang or "vi"
-                    srt_file = f"{base_name}.bilingual.srt" if lang == "bilingual" else f"{base_name}.vi.srt"
+                    srt_file = f"{base_name}.dubbed.bilingual.srt" if lang == "bilingual" else f"{base_name}.dubbed.vi.srt"
                     if not os.path.exists(srt_file):
                         srt_file = f"{base_name}.srt"
                     if os.path.exists(srt_file):
@@ -1643,7 +1643,8 @@ def _run_video_edit_job(task_id: str, req_data: dict):
         # Tự động tìm file phụ đề nếu người dùng muốn ép sub
         srt_to_burn = None
         if req_data.get("burn_subtitles"):
-            candidates = [
+            candidates = ([f"{base_name}.dubbed.vi.srt", f"{base_name}.dubbed.bilingual.srt"]
+                          if req_data.get("use_dubbed_audio") else []) + [
                 f"{base_name}.vi.srt",
                 f"{base_name}.bilingual.srt",
                 f"{base_name}.srt"
@@ -1985,7 +1986,8 @@ def _run_batch_pipeline_worker(batch_id: str, req_data: dict):
                                 clean_bgm=req_data.get("clean_bgm", True),
                                 openai_api_key=cfg.get("openai_api_key", os.environ.get("OPENAI_API_KEY", "")),
                                 openai_base_url=cfg.get("openai_base_url", ""),
-                                task_id=f"{batch_id}-{idx}"
+                                task_id=f"{batch_id}-{idx}",
+                                video_speed=req_data.get("speed", 1.05)
                             ))
                         except Exception as dub_error:
                             fail(filepath, "dub", dub_error)
@@ -2007,7 +2009,8 @@ def _run_batch_pipeline_worker(batch_id: str, req_data: dict):
                             flip_horizontal=req_data.get("flip_horizontal", True),
                             zoom_percent=req_data.get("zoom_percent", 1.05),
                             speed=req_data.get("speed", 1.05),
-                            srt_path=vi_srt if req_data.get("burn_subtitles", True) else None,
+                            srt_path=(f"{base_name}.dubbed.vi.srt" if os.path.exists(f"{base_name}.dubbed.vi.srt") else vi_srt)
+                                if req_data.get("burn_subtitles", True) else None,
                             dubbed_audio_path=dubbed_mp3
                         )
                         if (not os.path.isfile(staged_output) or os.path.getsize(staged_output) == 0

@@ -152,16 +152,21 @@ class Studio(unittest.TestCase):
             self.job('tts',data)
             self.assertEqual(mock.await_count,3)
 
-    def test_long_voice_blocks_export_and_preview_can_skip(self):
-        data=self.save(self.project()['project'])
-        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(3))):
+    def test_long_voice_extends_export_and_preserves_words(self):
+        data=self.project()['project']
+        data['segments']=[dict(id='last',start=5,end=5.8,text='Cuối',vietnamese='Lời dài',speaker='')]
+        data=self.save(data)
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(4))):
             result=self.job('tts',data)
-        self.assertEqual(result['status'],'error')
-        self.assertTrue(all(e['status']=='needs_timing' for e in self.project()['audio'].values()))
-        data['studio_config']['render']['dubbed']=True;data=self.save(data)
-        self.assertEqual(self.job('export',data)['status'],'error')
-        result=self.job('preview',data,skip_errors=True)
         self.assertEqual(result['status'],'completed',result)
+        self.assertTrue(all(e['status']=='ready' for e in self.project()['audio'].values()))
+        data['studio_config']['render']['dubbed']=True;data=self.save(data)
+        result=self.job('export',data)
+        self.assertEqual(result['status'],'completed',result)
+        rendered=store.paths(self.video)[2]/result['artifact']
+        self.assertTrue(media.has_audio(rendered))
+        self.assertGreater(media.probe(rendered)['duration'],7,result)
+        self.assertGreater(result['render']['extended_seconds'],1)
 
     def test_preview_and_export_with_audio_mix(self):
         data=self.save(self.project()['project'])
@@ -172,6 +177,7 @@ class Studio(unittest.TestCase):
         data=self.save(data)
         result=self.job('export',data)
         self.assertEqual(result['status'],'completed',result)
+        self.assertTrue(all(abs(e['tempo_factor']-.5)<.01 for e in self.project()['audio'].values()))
         output=store.paths(self.video)[2]/result['artifact']
         self.assertAlmostEqual(media.probe(output)['duration'],2,delta=.15)
         self.assertTrue(media.has_audio(output))

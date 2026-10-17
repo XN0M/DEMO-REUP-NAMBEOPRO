@@ -193,7 +193,7 @@ class PersonalVoices(unittest.TestCase):
         engine.synthesize('Câu mới',identity)
         self.assertEqual(engine.request.call_count,2)
 
-    def test_legacy_real_mux_and_long_voice_preserves_previous_export(self):
+    def test_legacy_real_mux_and_long_voice_extends_video(self):
         from core import studio_media as media
         video=Path(self.temp.name)/'video.mp4'
         media.run(['-f','lavfi','-i','color=c=blue:s=320x180:d=2','-c:v','libx264','-pix_fmt','yuv420p',video])
@@ -201,11 +201,11 @@ class PersonalVoices(unittest.TestCase):
         with patch.object(server.dubber,'synthesize_vieneu',new_callable=AsyncMock,return_value=wav(.4)):
             result=asyncio.run(server.dubber.execute_dubbing(str(video),transcript,single_voice='vieneu:preset:Mai Anh',task_id='test-vieneu'))
         self.assertEqual(result['status'],'success')
-        previous=Path(result['dubbed_video']).read_bytes(),Path(result['dubbed_audio']).read_bytes()
-        with patch.object(server.dubber,'synthesize_vieneu',new_callable=AsyncMock,return_value=wav(3)):
-            with self.assertRaisesRegex(TTSError,'quá dài'):
-                asyncio.run(server.dubber.execute_dubbing(str(video),transcript,single_voice='vieneu:preset:Mai Anh',task_id='test-vieneu-long'))
-        self.assertEqual(previous,(Path(result['dubbed_video']).read_bytes(),Path(result['dubbed_audio']).read_bytes()))
+        with patch.object(server.dubber,'synthesize_vieneu',new_callable=AsyncMock,return_value=wav(4)):
+            extended=asyncio.run(server.dubber.execute_dubbing(str(video),transcript,single_voice='vieneu:preset:Mai Anh',task_id='test-vieneu-long'))
+        self.assertEqual(extended['status'],'success')
+        self.assertGreater(media.probe(result['dubbed_video'])['duration'],2.2)
+        self.assertIn('00:00:02,',video.with_name('video.dubbed.vi.srt').read_text(encoding='utf-8'))
         self.assertFalse(list(video.parent.glob('.dub_*')))
 
     def test_worker_authentication_and_restart_after_exit(self):
