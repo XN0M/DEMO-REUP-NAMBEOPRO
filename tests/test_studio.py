@@ -185,6 +185,29 @@ class Studio(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         self.assertEqual(self.client.get('/api/studio/asset',params={'filepath':'sample.mp4','name':'../sample.mp4'}).status_code,404)
 
+    def test_no_dialogue_cue_keeps_transcript_but_does_not_block_export(self):
+        data=self.project()['project']
+        quiet=data['segments'][1]
+        quiet['vietnamese']=''
+        quiet['no_dialogue']=True
+        data['studio_config']['render']['dubbed']=True
+        data=self.save(data)
+        self.assertEqual(store.dub_text(quiet,'zh'),'')
+        self.assertEqual(self.project()['audio'][quiet['id']]['status'],'empty')
+        self.assertTrue(self.project()['project']['segments'][1]['no_dialogue'])
+        self.assertNotIn('谢谢',self.video.with_suffix('.srt').read_text(encoding='utf-8'))
+        self.assertIn('谢谢',self.video.with_suffix('.transcript.txt').read_text(encoding='utf-8'))
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound())) as mock:
+            self.assertEqual(self.job('tts',data)['status'],'completed')
+        self.assertEqual(mock.await_count,1)
+        result=self.job('export',data)
+        self.assertEqual(result['status'],'completed',result)
+        self.assertTrue(media.has_audio(store.paths(self.video)[2]/result['artifact']))
+        self.assertNotIn('谢谢',media.ass_document(data,640,360,0,6,1))
+        data['segments'][1]['no_dialogue']='yes'
+        self.assertEqual(self.client.put('/api/studio/project',json={
+            'filepath':'sample.mp4','expected_revision':data['revision'],'project':data}).status_code,400)
+
     def test_silent_video_speed_matrix_trim_and_subtitle_render(self):
         import shutil
         shutil.copy2(self.silent,self.video)

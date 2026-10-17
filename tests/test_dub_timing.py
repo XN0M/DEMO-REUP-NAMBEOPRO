@@ -39,6 +39,14 @@ class Timing(unittest.TestCase):
                  'b':dict(status='ready',play_start=10,play_end=11)}
         self.assertEqual(captions(segments,config,entries)['a'],(2,10))
 
+    def test_no_dialogue_cue_does_not_create_or_clip_captions(self):
+        segments=[dict(id='a',start=0,end=8),dict(id='silent',start=2,end=3,no_dialogue=True),
+                  dict(id='b',start=6,end=7)]
+        config=dict(render=dict(dubbed=False,speed=1),caption_hold=12)
+        windows=captions(segments,config)
+        self.assertNotIn('silent',windows)
+        self.assertEqual(windows['a'],(0,6))
+
     def test_overlapping_voice_track_contains_both_cues(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

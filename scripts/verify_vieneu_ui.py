@@ -25,9 +25,10 @@ def main():
         sample = root / 'reference.wav'
         media.run(['-f','lavfi','-i','color=c=blue:s=640x360:d=6','-c:v','libx264','-pix_fmt','yuv420p',video])
         media.run(['-f','lavfi','-i','sine=frequency=440:duration=3.2','-ar','48000','-ac','1',sample])
-        store.atomic_json(store.paths(video)[0], {'detected_language':'vi','segments':[
-            {'id':'a','start':.2,'end':2,'text':'Xin chào các bạn','speaker':'A'},
-            {'id':'b','start':3,'end':5,'text':'Cảm ơn các bạn','speaker':'A'}]})
+        store.atomic_json(store.paths(video)[0], {'detected_language':'zh','segments':[
+            {'id':'a','start':.2,'end':2,'chinese':'你好','vietnamese':'Xin chào các bạn','speaker':'A'},
+            {'id':'b','start':3,'end':5,'chinese':'谢谢','vietnamese':'Cảm ơn các bạn','speaker':'A'},
+            {'id':'c','start':5.1,'end':5.8,'chinese':'屏幕文字','speaker':'A'}]})
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0));port=sock.getsockname()[1]
         child = '''
@@ -95,6 +96,15 @@ uvicorn.run(server.app,host='127.0.0.1',port=int(sys.argv[2]),log_level='warning
                 expect(page.locator('.ns').get_by_label('Chồng tiếng tối đa (giây)')).to_have_value('1')
                 expect(page.locator('.ns').get_by_label('Tự ẩn phụ đề sau (giây)')).to_have_value('12')
                 page.locator('.ns').get_by_label('Âm thanh').select_option('dubbed')
+                expect(page.locator('.ns .stepActions')).to_contain_text('1 câu chưa có lời đọc tiếng Việt')
+                expect(page.locator('.ns .stepActions').get_by_role('button',name='Xuất video có lồng tiếng')).to_be_disabled()
+                page.locator('.ns .stepActions').get_by_role('button',name='Xem 1 câu để nhập tay').click()
+                expect(page.locator('.ns .cue.selected')).to_have_count(1)
+                page.locator('.ns .cueSelection').get_by_role('button',name='Đánh dấu không có thoại').click()
+                expect(page.locator('.ns .cue.selected')).to_contain_text('Không có thoại')
+                page.locator('.ns').get_by_role('tab',name='4. Xuất video').click()
+                expect(page.locator('.ns .stepActions').get_by_role('button',name='Xuất video có lồng tiếng')).to_be_enabled()
+                page.screenshot(path=str(output/'ui-no-dialogue.png'),full_page=True)
                 page.locator('.ns .stepActions').get_by_role('button',name='Render thử 5 giây').click()
                 expect(page.locator('.ns .job')).to_contain_text('Render thử · Hoàn tất',timeout=60000)
                 expect(page.locator('.ns .renderedStage')).to_be_visible()

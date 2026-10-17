@@ -98,6 +98,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     events = []
     windows = captions(data['segments'], data['studio_config'], entries)
     for seg in data['segments']:
+        if seg.get('no_dialogue'):
+            continue
         cue_start, cue_end = windows[seg['id']]
         a, b = max(start, cue_start), min(end, cue_end)
         if b <= a:

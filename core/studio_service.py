@@ -94,10 +94,10 @@ class StudioService:
         timing_key = store.timing_key(data)
         for seg in data['segments']:
             entry = copy.deepcopy(manifest.get(seg['id'], {}))
-            key = store.audio_key(data, seg, self.fingerprint(video))
             if not store.dub_text(seg, data.get('detected_language')):
                 entries[seg['id']] = {'status': 'empty'}
                 continue
+            key = store.audio_key(data, seg, self.fingerprint(video))
             if not entry:
                 entry = {'status': 'missing'}
             elif entry.get('key') != key:
@@ -215,8 +215,11 @@ class StudioService:
             ids = list(dict.fromkeys(segment_ids if segment_ids is not None else known))
             if not set(ids) <= known:
                 raise ValueError('ID câu không tồn tại')
+            if kind == 'tts':
+                active = {s['id'] for s in snapshot['segments'] if not s.get('no_dialogue')}
+                ids = [sid for sid in ids if sid in active]
             if kind in ('tts', 'translate', 'shorten', 'character-map') and not ids:
-                raise ValueError('Chọn ít nhất một câu')
+                raise ValueError('Chọn ít nhất một câu có thoại' if kind == 'tts' else 'Chọn ít nhất một câu')
             if self.host._download_in_progress(video) or not self.host._reserve_source_job(video):
                 raise store.Conflict('Video đang được xử lý')
         jid = uuid.uuid4().hex
@@ -227,7 +230,7 @@ class StudioService:
         self.events[jid] = event
         try:
             if kind in ('tts', 'export', 'preview'):
-                lease = voice_library.pin([store.voice_for(snapshot, s)['voice'] for s in snapshot['segments'] if s['id'] in ids])
+                lease = voice_library.pin([store.voice_for(snapshot, s)['voice'] for s in snapshot['segments'] if s['id'] in ids and not s.get('no_dialogue')])
                 lease.__enter__()
                 self.voice_leases[jid] = lease
             self.update(job)
@@ -513,7 +516,7 @@ class StudioService:
             if job['kind']=='preview':
                 start = max(start, min(end-.1, job['options'].get('at', 0)-2.5*data['studio_config']['render']['speed']))
                 end = min(end,start+5*data['studio_config']['render']['speed'])
-            required = [s for s in data['segments'] if (s['end']>start and s['start']<end
+            required = [s for s in data['segments'] if not s.get('no_dialogue') and (s['end']>start and s['start']<end
                         or entries[s['id']].get('play_end',s['end'])>start
                         and entries[s['id']].get('play_start',s['start'])<end)
                         and (store.dub_text(s,data.get('detected_language')) or store.source_text(s))]
@@ -552,7 +555,7 @@ class StudioService:
         lease = None
         try:
             if data['studio_config']['render']['dubbed']:
-                lease = voice_library.pin([store.voice_for(data, s)['voice'] for s in data['segments']])
+                lease = voice_library.pin([store.voice_for(data, s)['voice'] for s in data['segments'] if not s.get('no_dialogue')])
                 lease.__enter__()
                 status = self.audio_status(video,data)
                 job['segment_ids'] = [s['id'] for s in data['segments'] if status[s['id']]['status'] not in ('ready','empty')]

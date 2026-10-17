@@ -12,6 +12,8 @@ Tiến độ, thử lại và kết quả nằm ngay trong Studio. Kết quả t
 
 Khung **Video gốc · chỉnh sửa** luôn phát âm thanh gốc để chỉnh timeline. Sau **Render thử 5 giây**, Studio chuyển sang **Bản render thử · có tiếng** để nghe đoạn kết quả; nút **Tải bản thử 5 giây** chỉ tải đoạn này. Muốn xuất toàn bộ, vào **Xuất video**, bổ sung lời đọc cho mọi câu được báo còn thiếu, tạo/căn lại giọng, rồi bấm **Xuất video có lồng tiếng**. Khi xử lý xong, dùng **Tải video đã xuất** hoặc **Mở thư mục**.
 
+Nếu một mục nhận diện thực ra không có lời nói (ví dụ chữ trên hình hoặc nhận diện nhầm), đánh dấu **Không có thoại** ngay trên dòng câu đó. Mục vẫn nằm trong bản thoại để kiểm tra và có thể bật lại, nhưng không cần dịch/tạo giọng, không hiện phụ đề và không chặn xuất. Có thể chọn nhiều câu rồi dùng **Đánh dấu không có thoại**.
+
 ---
 
 ## 📂 Cấu Trúc Mã Nguồn (Architecture Overview)

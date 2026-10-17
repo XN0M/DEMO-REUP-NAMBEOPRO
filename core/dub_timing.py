@@ -33,7 +33,8 @@ def captions(segments, config, entries=None):
     entries = entries or {}
     dubbed = config['render']['dubbed']
     limit = config['caption_hold'] * config['render']['speed']
-    ordered = sorted(segments, key=lambda seg: (seg['start'], seg['end'], seg['id']))
+    ordered = sorted((seg for seg in segments if not seg.get('no_dialogue')),
+                     key=lambda seg: (seg['start'], seg['end'], seg['id']))
     result = {}
     for index, seg in enumerate(ordered):
         entry = entries.get(seg['id'], {}) if dubbed else {}

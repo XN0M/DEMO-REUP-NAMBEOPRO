@@ -64,6 +64,8 @@ def source_text(seg):
     return seg.get('chinese') or seg.get('text') or ''
 
 def dub_text(seg, language):
+    if seg.get('no_dialogue'):
+        return ''
     override = seg.get('dub_text')
     if override is not None:
         return override.strip()
@@ -130,6 +132,8 @@ def validate(data, duration):
         for key in ('text', 'chinese', 'vietnamese', 'speaker', 'dub_text'):
             if key in seg and seg[key] is not None and not isinstance(seg[key], str):
                 raise ValueError(f'{key} phải là văn bản')
+        if 'no_dialogue' in seg and not isinstance(seg['no_dialogue'], bool):
+            raise ValueError('Không có thoại phải là bật/tắt')
     cfg = data['studio_config']
     style = cfg['style']
     if style['font'] != 'DejaVu Sans':
@@ -232,7 +236,7 @@ def save(video, data, expected=None, duration=None):
 def write_exports(video, data):
     from .transcriber import DouyinTranscriber
     base = os.path.splitext(str(video))[0]
-    segments = data['segments']
+    segments = [seg for seg in data['segments'] if not seg.get('no_dialogue')]
     views = {
         '.srt': [{**s, 'text': source_text(s)} for s in segments],
         '.vi.srt': [{**s, 'text': s.get('vietnamese', '')} for s in segments],
@@ -241,7 +245,7 @@ def write_exports(video, data):
     for suffix, cues in views.items():
         content = DouyinTranscriber.generate_srt(cues, 'text')
         atomic_text(Path(base + suffix), content)
-    atomic_text(Path(base + '.transcript.txt'), DouyinTranscriber.generate_txt(segments, include_timestamps=True))
+    atomic_text(Path(base + '.transcript.txt'), DouyinTranscriber.generate_txt(data['segments'], include_timestamps=True))
 
 def atomic_text(path, content):
     fd, tmp = tempfile.mkstemp(prefix='.studio-', suffix='.tmp', dir=path.parent)
@@ -282,6 +286,8 @@ def warnings(data, media_info=None):
     result = []
     ordered = sorted(data['segments'], key=lambda s: s['start'])
     for seg in ordered:
+        if seg.get('no_dialogue'):
+            continue
         text = seg.get('vietnamese') or source_text(seg)
         issues = []
         style = data['studio_config']['style']
