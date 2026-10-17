@@ -26,6 +26,13 @@ class TTSError(ValueError):
     """Actionable, safe to display to the user."""
 
 
+class ProviderUnavailable(TTSError):
+    """A provider-wide failure: skip its remaining network requests in this job."""
+    def __init__(self, provider, message):
+        super().__init__(message)
+        self.provider = provider
+
+
 @contextmanager
 def gpu_slot(cancelled=lambda: False):
     while not GPU_LOCK.acquire(timeout=.1):

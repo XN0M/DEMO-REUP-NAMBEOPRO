@@ -139,6 +139,12 @@ Font và giấy phép nằm trong `web/fonts/`.
 
 ## VieNeu-TTS local và giọng cá nhân
 
+Nếu lồng tiếng Edge xuất hiện HTTP 403 hoặc RuntimeError trên bản cũ, chạy
+`cap_nhat.bat`, đóng tool rồi mở lại `run.bat`. Ứng dụng yêu cầu Edge TTS từ
+7.3.1; bản 7.2.8 dùng giao thức cũ đã bị dịch vụ từ chối. Lỗi kết nối được
+hiển thị cùng hướng xử lý; job ngừng gọi lại provider đã lỗi, giữ audio cache
+và tiếp tục các giọng/provider khác. Có thể chủ động chọn VieNeu để chạy local.
+
 Trong phần chọn giọng của Studio, lồng tiếng nhanh hoặc batch, bấm **Giọng cá
 nhân / Cài VieNeu**. Chọn **RTX / CUDA** cho máy có NVIDIA, rồi **Cài / sửa
 VieNeu**. Hoặc chạy `cai_vieneu.bat`. Bộ cài tạo `.venv-vieneu` riêng, tải

@@ -45,6 +45,7 @@ from core.dubber import DouyinDubber
 from core.subtitler import DouyinSubtitler
 from core.editor import VideoEditor
 from core.vocal_remover import VocalRemover
+from core.tts_runtime import ProviderUnavailable
 
 app = FastAPI(title="Douyin Video Downloader MVP")
 
@@ -1375,6 +1376,8 @@ async def preview_dub_voice(req: DubPreviewRequest):
             base_url=openai_base
         )
         return Response(content=audio_bytes, media_type="audio/wav" if (req.voice or '').startswith('vieneu:') else "audio/mpeg")
+    except ProviderUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except StudioConflict as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:

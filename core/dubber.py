@@ -21,6 +21,8 @@ except ImportError:
     sys.modules['audioop'] = audioop
 
 import edge_tts
+from aiohttp import ClientConnectionError, ClientResponseError
+from core.tts_runtime import ProviderUnavailable
 
 VOICE_CATALOG = [
     {
@@ -172,6 +174,9 @@ class DouyinDubber:
 
     async def synthesize_edge(self, text: str, voice: str = "vi-VN-HoaiMyNeural", retries: int = 3) -> bytes:
         """Synthesize text using Microsoft Edge TTS with automatic retries."""
+        if tuple(edge_tts.__version_info__) < (7, 3, 1):
+            raise ProviderUnavailable('edge', 'Edge TTS đang dùng phiên bản cũ gây lỗi HTTP 403. '
+                'Chạy cap_nhat.bat rồi khởi động lại tool; hoặc chọn giọng VieNeu local.')
         for attempt in range(retries):
             try:
                 comm = edge_tts.Communicate(text, voice)
@@ -182,10 +187,17 @@ class DouyinDubber:
                 if audio_bytes:
                     return bytes(audio_bytes)
             except Exception as e:
+                if isinstance(e, ClientResponseError) and e.status in (401, 403):
+                    raise ProviderUnavailable('edge', f'Edge TTS bị dịch vụ từ chối (HTTP {e.status}). '
+                        'Chạy cap_nhat.bat rồi khởi động lại tool. Nếu vẫn lỗi, chọn giọng VieNeu local.') from None
                 if attempt == retries - 1:
-                    raise RuntimeError(f"Edge TTS ({voice}) thất bại sau {retries} lần thử: {e}")
+                    if isinstance(e, (ClientConnectionError, TimeoutError)):
+                        raise ProviderUnavailable('edge', 'Không kết nối được Edge TTS. '
+                            'Kiểm tra mạng rồi thử lại, hoặc chọn giọng VieNeu local.') from None
+                    raise TTSError(f'Edge TTS không tạo được âm thanh cho giọng {voice} sau {retries} lần thử. '
+                                   'Kiểm tra lời đọc và chọn lại giọng.') from None
                 await asyncio.sleep(0.5 * (attempt + 1))
-        raise RuntimeError(f"Edge TTS không trả về dữ liệu âm thanh cho giọng {voice}.")
+        raise TTSError(f'Edge TTS không trả về âm thanh cho giọng {voice}. Kiểm tra lời đọc rồi thử lại.')
 
     async def synthesize_openai(
         self,

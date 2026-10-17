@@ -306,6 +306,28 @@ class Studio(unittest.TestCase):
             with self.assertRaises(PermissionError):store.save(self.video,data,0,6)
         self.assertEqual(store.paths(self.video)[0].read_bytes(),before)
 
+    def test_provider_outage_stops_repeated_calls_preserves_cache_and_other_provider(self):
+        from core.tts_runtime import ProviderUnavailable
+        data=self.project()['project']
+        data['segments']=[dict(id=f'cue{i}',start=i*.4,end=i*.4+.35,text=f'Hello {i}',vietnamese=f'Chào {i}',speaker='A' if i<12 else 'B') for i in range(13)]
+        data['studio_config']['speakers']={'B':{'provider':'openai','model':'tts-1','voice':'alloy'}}
+        data=self.save(data)
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(.1))):
+            self.job('tts',data,segment_ids=['cue0','cue1'])
+        assets=store.paths(self.video)[2]
+        manifest=self.svc.manifest(self.video)
+        cached=(assets/manifest['cue0']['aligned']).read_bytes()
+        error=ProviderUnavailable('edge','Edge TTS bị từ chối (HTTP 403). Chạy cap_nhat.bat.')
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(side_effect=error)) as edge, patch.object(server.dubber,'synthesize_openai',AsyncMock(return_value=sound(.1))) as paid:
+            result=self.job('tts',data)
+        self.assertEqual(result['status'],'partial',result)
+        self.assertLessEqual(edge.await_count,2)
+        self.assertEqual(len(result['failed']),10)
+        self.assertEqual(len(result['completed']),3)
+        paid.assert_awaited_once()
+        self.assertIn('cap_nhat.bat',result['message'])
+        self.assertEqual(cached,(assets/manifest['cue0']['aligned']).read_bytes())
+
     def test_cancellable_ffmpeg_stops_process(self):
         event=threading.Event();result=[]
         def encode():

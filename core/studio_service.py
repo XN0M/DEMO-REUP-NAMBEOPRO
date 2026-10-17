@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import numpy as np
 from . import studio_store as store, studio_media as media
-from .tts_runtime import library as voice_library
+from .tts_runtime import library as voice_library, ProviderUnavailable
 
 TERMINAL = {'completed', 'partial', 'error', 'cancelled', 'interrupted'}
 
@@ -272,6 +272,8 @@ class StudioService:
             job['status'] = 'partial' if job['failed'] and job['completed'] else 'error' if job['failed'] else 'completed'
             job['progress'] = 100
             job['message'] = 'Đã xử lý xong' if not job['failed'] else 'Có câu chưa xử lý được'
+            if job.get('provider_errors'):
+                job['message'] = ' · '.join(job['provider_errors'].values())
         except media.Cancelled:
             job.update(status='cancelled', message='Đã hủy')
         except Exception as error:
@@ -301,6 +303,7 @@ class StudioService:
         cache.mkdir(exist_ok=True)
         manifest = self.manifest(video)
         selected = [s for s in data['segments'] if s['id'] in job['segment_ids']]
+        blocked_providers = {}
         async def sentence(seg):
             while not self.tts_slots.acquire(blocking=False):
                 if event.is_set():
@@ -318,6 +321,8 @@ class StudioService:
                     raise ValueError('Câu chưa có lời đọc/bản dịch')
                 voice = store.voice_for(data, seg)
                 if not raw.exists():
+                    if voice['provider'] in blocked_providers:
+                        raise blocked_providers[voice['provider']]
                     cfg = self.host.load_app_config()
                     reference = None
                     if voice['provider'] == 'omnivoice':
@@ -373,6 +378,9 @@ class StudioService:
             except media.Cancelled:
                 raise
             except Exception as error:
+                if isinstance(error, ProviderUnavailable):
+                    blocked_providers[error.provider] = error
+                    job.setdefault('provider_errors', {})[error.provider] = str(error)
                 public = str(error) if isinstance(error, ValueError) else f'{type(error).__name__}: Không tạo được giọng. Kiểm tra kết nối/provider.'
                 entry.update(status='error', error=public)
                 manifest[seg['id']] = entry

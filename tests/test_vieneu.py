@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 import server
 from core import studio_store as store
 from core.tts_runtime import VoiceLibrary, TTSError, GPU_LOCK, gpu_slot, VieneuRuntime
+from core.tts_runtime import ProviderUnavailable
 
 
 def wav(seconds=3.2, silent=False):
@@ -113,6 +114,46 @@ class PersonalVoices(unittest.TestCase):
     def test_unknown_provider_rejected(self):
         with self.assertRaises(TTSError):
             asyncio.run(server.dubber.synthesize_sentence('Text', 'bad', provider='bad'))
+
+    def test_old_edge_version_requests_update_without_network(self):
+        with patch('core.dubber.edge_tts.__version_info__', (7,2,8)), patch('core.dubber.edge_tts.Communicate') as comm:
+            with self.assertRaisesRegex(ProviderUnavailable,'cap_nhat.bat'):
+                asyncio.run(server.dubber.synthesize_edge('Xin chào'))
+            comm.assert_not_called()
+
+    def test_edge_403_is_actionable_sanitized_and_not_retried(self):
+        from aiohttp import ClientResponseError
+        from types import SimpleNamespace
+        request=SimpleNamespace(real_url='https://example.invalid/?api_key=private-test-value')
+        failure=ClientResponseError(request,(),status=403,message='Forbidden private-test-value')
+        class Denied:
+            async def stream(self):
+                raise failure
+                yield
+        with patch('core.dubber.edge_tts.__version_info__',(7,3,1)), patch('core.dubber.edge_tts.Communicate',return_value=Denied()) as comm:
+            with self.assertRaises(ProviderUnavailable) as caught:
+                asyncio.run(server.dubber.synthesize_edge('Xin chào'))
+            self.assertIn('HTTP 403',str(caught.exception))
+            self.assertNotIn('private-test-value',str(caught.exception))
+            self.assertNotIn('example.invalid',str(caught.exception))
+            comm.assert_called_once()
+        with patch.object(server.dubber,'synthesize_edge',new_callable=AsyncMock,side_effect=caught.exception):
+            response=self.client.post('/api/dub/preview',json={'voice':'vi-VN-HoaiMyNeural'})
+            self.assertEqual(response.status_code,503)
+            self.assertIn('HTTP 403',response.json()['detail'])
+
+    def test_edge_transient_failure_retries_and_returns_audio(self):
+        from aiohttp import ClientConnectionError
+        class Flaky:
+            attempts=0
+            async def stream(self):
+                Flaky.attempts+=1
+                if Flaky.attempts==1:
+                    raise ClientConnectionError('temporary')
+                yield {'type':'audio','data':b'audio'}
+        with patch('core.dubber.edge_tts.__version_info__',(7,3,1)), patch('core.dubber.edge_tts.Communicate',return_value=Flaky()), patch('core.dubber.asyncio.sleep',new_callable=AsyncMock):
+            self.assertEqual(asyncio.run(server.dubber.synthesize_edge('Xin chào')),b'audio')
+            self.assertEqual(Flaky.attempts,2)
 
     def test_cancelled_waiter_does_not_enter_gpu(self):
         started, cancelled = threading.Event(), threading.Event()
