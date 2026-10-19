@@ -168,6 +168,11 @@ theo người nói. Giọng có sẵn và giọng cá nhân dùng chung ở cả
 **Mặc định cho nhanh / batch** lưu trên trình duyệt cho các tác vụ mới; cấu hình
 giọng của video đã lưu trong Studio vẫn được ưu tiên khi batch.
 
+Trong **Giọng cá nhân / Cài VieNeu**, có thể ghi chú cho từng giọng có sẵn hoặc
+giọng cá nhân (ví dụ loại video, sắc thái phù hợp). Ghi chú hiện khi chọn giọng
+trong Studio và danh sách lồng tiếng nhanh/batch; ghi chú lưu riêng trong
+`.runtime/voices/notes.json`, không thay đổi âm thanh hay cache TTS.
+
 Thêm giọng bằng WAV/MP3/M4A/FLAC dài **3–8 giây**, tối đa **20 MB**, một người
 nói rõ, ít nhạc nền. Đặt tên và xác nhận quyền sử dụng; bấm **Thử giọng** để
 nghe câu mới bằng mẫu vừa lưu. Audio mẫu được chuẩn hóa WAV mono 48 kHz, lưu

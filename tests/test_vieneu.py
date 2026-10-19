@@ -55,6 +55,36 @@ class PersonalVoices(unittest.TestCase):
         self.assertEqual(self.client.delete(f'/api/tts/voices/custom/{identity}').status_code, 200)
         self.assertEqual(self.client.get(f'/api/tts/voices/custom/{identity}/sample').status_code, 404)
 
+    def test_voice_notes_persist_for_presets_and_custom_without_changing_audio_cache(self):
+        identity = 'a' * 32
+        directory = self.library.path(identity)
+        directory.mkdir(parents=True)
+        custom = {'id': identity, 'name': 'Giọng mẫu', 'sha256': 'original'}
+        self.library._save(directory, custom)
+        voice_id = 'vieneu:custom:' + identity
+        with patch.object(server.dubber, 'get_available_voices', return_value=[
+                {'id': 'vieneu:preset:Mai Anh'}, {'id': voice_id}]):
+            preset = self.client.put('/api/tts/voices/note/vieneu:preset:Mai%20Anh',
+                                     json={'note': '  Hợp video kể chuyện  '})
+            self.assertEqual(preset.status_code, 200, preset.text)
+            self.assertEqual(preset.json()['note'], 'Hợp video kể chuyện')
+            self.assertEqual(self.client.put('/api/tts/voices/note/' + voice_id,
+                json={'note': '<b>Phim cổ trang</b>'}).status_code, 200)
+            self.assertEqual(self.client.put('/api/tts/voices/note/unknown',
+                json={'note': 'Không hợp lệ'}).status_code, 404)
+            self.assertEqual(self.client.put('/api/tts/voices/note/' + voice_id,
+                json={'note': 'x' * 501}).status_code, 400)
+        self.assertEqual(VoiceLibrary(self.library.root).notes()[voice_id], '<b>Phim cổ trang</b>')
+        with patch('core.dubber.vieneu_runtime.catalog', return_value=[
+                {'id': 'vieneu:preset:Mai Anh', 'name': 'Mai Anh'}]):
+            annotated = server.dubber.get_available_voices()
+        self.assertEqual(next(voice['note'] for voice in annotated
+            if voice['id'] == 'vieneu:preset:Mai Anh'), 'Hợp video kể chuyện')
+        self.assertEqual(next(voice['note'] for voice in annotated
+            if voice['id'] == voice_id), '<b>Phim cổ trang</b>')
+        self.assertEqual(self.library.get(identity)['sha256'], custom['sha256'])
+        self.assertEqual(self.client.get('/api/tts/voices/custom').json()['voices'][0]['name'], custom['name'])
+
     def test_invalid_audio_and_consent_leave_no_assets(self):
         for name, content, consent in [('bad.wav', b'not audio', True), ('short.wav', wav(1), True),
                                        ('long.wav', wav(9), True), ('silent.wav', wav(silent=True), True),

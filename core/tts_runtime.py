@@ -71,6 +71,32 @@ class VoiceLibrary:
         with self.lock:
             return [self.get(p.name) for p in sorted(self.root.glob('*')) if (p / 'voice.json').is_file()]
 
+    def notes(self):
+        with self.lock:
+            try:
+                data = json.loads((self.root / 'notes.json').read_text(encoding='utf-8'))
+                return data if isinstance(data, dict) else {}
+            except (FileNotFoundError, ValueError):
+                return {}
+
+    def set_note(self, voice_id, note):
+        if not isinstance(note, str) or len(note) > 500:
+            raise TTSError('Ghi chú giọng không quá 500 ký tự')
+        with self.lock:
+            notes = self.notes()
+            if note.strip():
+                notes[voice_id] = note.strip()
+            else:
+                notes.pop(voice_id, None)
+            self.root.mkdir(parents=True, exist_ok=True)
+            temporary = self.root / ('notes-' + uuid.uuid4().hex + '.tmp')
+            try:
+                temporary.write_text(json.dumps(notes, ensure_ascii=False), encoding='utf-8')
+                os.replace(temporary, self.root / 'notes.json')
+            finally:
+                temporary.unlink(missing_ok=True)
+            return notes.get(voice_id, '')
+
     def sample(self, identity):
         self.get(identity)
         sample = (self.path(identity) / 'sample.wav').resolve()

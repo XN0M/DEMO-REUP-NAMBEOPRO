@@ -171,7 +171,8 @@ class DouyinDubber:
             presets = []
         custom = [dict(id='vieneu:custom:'+v['id'], name=v['name'], provider='vieneu', model='v3turbo',
                        gender='neutral', lang='vi-VN', free=True, kind='custom') for v in voice_library.list()]
-        return [*VOICE_CATALOG, *presets, *custom]
+        notes = voice_library.notes()
+        return [dict(voice, note=notes.get(voice['id'], '')) for voice in [*VOICE_CATALOG, *presets, *custom]]
 
     async def synthesize_edge(self, text: str, voice: str = "vi-VN-HoaiMyNeural", retries: int = 3) -> bytes:
         """Synthesize text using Microsoft Edge TTS with automatic retries."""

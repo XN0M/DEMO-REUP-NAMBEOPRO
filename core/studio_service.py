@@ -63,6 +63,20 @@ class StudioService:
             raise FileNotFoundError('Không tìm thấy job')
         return json.loads(row[0])
 
+    @staticmethod
+    def public_job(job):
+        """Expose the render choice captured by this job, including older jobs."""
+        result = {key: value for key, value in job.items() if key != 'snapshot'}
+        if job.get('kind') in ('preview', 'export'):
+            render = job.get('snapshot', {}).get('studio_config', {}).get('render', {})
+            result['output_summary'] = {
+                'kind': job['kind'],
+                'audio_mode': 'dubbed' if render.get('dubbed') else 'original',
+                'subtitles': render.get('subtitles', True),
+                'has_audio': job.get('output_has_audio'),
+            }
+        return result
+
     def resolve(self, filepath):
         source = self.host._resolve_safe_path(filepath)
         if not os.path.isfile(source) or not source.lower().endswith('.mp4'):
@@ -246,7 +260,7 @@ class StudioService:
             self.events.pop(jid, None)
             self.host._release_source_job(video)
             raise
-        return {key: value for key, value in job.items() if key != 'snapshot'}
+        return self.public_job(job)
 
     def cancel(self, jid):
         job = self.get(jid)
@@ -541,6 +555,9 @@ class StudioService:
         result = media.render(video, data, output, work, event.is_set, track,
                               job['options'].get('at',0) if job['kind']=='preview' else None,
                               entries if track else None)
+        job['output_has_audio'] = media.has_audio(output)
+        if track and not job['output_has_audio']:
+            raise ValueError('File xuất thiếu âm thanh lồng tiếng')
         if event.is_set():
             raise media.Cancelled()
         # Every revision has its own artifact, leaving previous good exports intact.

@@ -10,6 +10,10 @@ class Rename(BaseModel):
     name: str
 
 
+class VoiceNote(BaseModel):
+    note: str
+
+
 class Device(BaseModel):
     device: str
 
@@ -47,6 +51,17 @@ def attach(host):
     @router.get('/voices/custom')
     def voices():
         return {'voices': library.list()}
+
+    @router.put('/voices/note/{voice_id:path}')
+    async def save_note(voice_id: str, req: VoiceNote):
+        available = await asyncio.to_thread(host.dubber.get_available_voices)
+        if voice_id not in {voice['id'] for voice in available}:
+            raise HTTPException(404, 'Không tìm thấy giọng để ghi chú')
+        try:
+            note = await asyncio.to_thread(library.set_note, voice_id, req.note)
+            return {'voice_id': voice_id, 'note': note}
+        except TTSError as error:
+            raise HTTPException(400, str(error))
 
     @router.post('/voices/custom')
     async def upload(request: Request, name: str = Query(...), filename: str = Query(...), consent: bool = False):

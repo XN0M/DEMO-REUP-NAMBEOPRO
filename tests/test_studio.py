@@ -181,9 +181,25 @@ class Studio(unittest.TestCase):
         output=store.paths(self.video)[2]/result['artifact']
         self.assertAlmostEqual(media.probe(output)['duration'],2,delta=.15)
         self.assertTrue(media.has_audio(output))
+        summary=self.client.get(f'/api/studio/jobs/{result["id"]}').json()['output_summary']
+        self.assertEqual(summary,{'kind':'export','audio_mode':'dubbed','subtitles':True,'has_audio':True})
+        listed=self.client.get('/api/studio/jobs',params={'filepath':'sample.mp4'}).json()['jobs'][0]
+        self.assertEqual(listed['output_summary'],summary)
         response=self.client.get('/api/studio/asset',params={'filepath':'sample.mp4','name':result['artifact']})
         self.assertEqual(response.status_code,200)
         self.assertEqual(self.client.get('/api/studio/asset',params={'filepath':'sample.mp4','name':'../sample.mp4'}).status_code,404)
+
+    def test_old_job_summary_uses_saved_snapshot_not_current_project(self):
+        data=self.save(self.project()['project'])
+        result=self.job('export',data)
+        self.assertEqual(result['status'],'completed',result)
+        stored=self.svc.get(result['id'])
+        stored.pop('output_has_audio',None)
+        self.svc.update(stored)
+        data['studio_config']['render']['dubbed']=True
+        self.save(data)
+        summary=self.client.get(f'/api/studio/jobs/{result["id"]}').json()['output_summary']
+        self.assertEqual(summary,{'kind':'export','audio_mode':'original','subtitles':True,'has_audio':None})
 
     def test_no_dialogue_cue_keeps_transcript_but_does_not_block_export(self):
         data=self.project()['project']
@@ -220,6 +236,7 @@ class Studio(unittest.TestCase):
             output=store.paths(self.video)[2]/result['artifact'];info=media.probe(output)
             self.assertAlmostEqual(info['duration'],2.5/speed,delta=.2)
             self.assertFalse(media.has_audio(output))
+            self.assertEqual(self.client.get(f'/api/studio/jobs/{result["id"]}').json()['output_summary']['has_audio'],False)
             cap=cv2.VideoCapture(str(output));ok,frame=cap.read();cap.release();self.assertTrue(ok)
             # White pixels establish that libass actually drew text over blue fixture.
             self.assertGreater(np.count_nonzero(np.min(frame,axis=2)>180),5)

@@ -114,8 +114,7 @@ def attach(host, database=None):
             result['stale'] = store.load(service.resolve(result['filepath']))['revision'] != result['revision']
         except (ValueError, HTTPException):
             result['stale'] = True
-        result.pop('snapshot',None)
-        return result
+        return service.public_job(result)
 
     @router.post('/jobs/{jid}/cancel')
     def cancel(jid: str):
@@ -145,7 +144,7 @@ def attach(host, database=None):
             rows = con.execute("SELECT data FROM jobs WHERE json_extract(data, '$.filepath')=? ORDER BY rowid DESC LIMIT 20", (filepath,)).fetchall()
         import json
         results = [json.loads(row[0]) for row in rows]
-        return {'jobs':[{k:v for k,v in j.items() if k != 'snapshot'} for j in results if j['filepath']==filepath][:20]}
+        return {'jobs':[service.public_job(j) for j in results if j['filepath']==filepath][:20]}
 
     @router.get('/asset')
     def asset(filepath: str, name: str):
