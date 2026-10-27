@@ -2171,3 +2171,8 @@ app.mount("/static", StaticFiles(directory=web_dir), name="static")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=False)
+
+
+# Multi-Page publishing keeps the legacy single-Page endpoints available.
+from core.facebook_pages import attach as attach_facebook_pages
+attach_facebook_pages(sys.modules[__name__])
