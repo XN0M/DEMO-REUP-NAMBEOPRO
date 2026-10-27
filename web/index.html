@@ -4,13 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/studio.css?v=20261017-workflow5" />
-  <script defer src="/static/studio.js?v=20261018-voice-picker"></script>
+  <script defer src="/static/studio.js?v=20261026-resize-workspace"></script>
   <title>Nambeo · Video Studio</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261018-voice-picker" />
+  <link rel="stylesheet" href="/static/app.css?v=20261027-neo-tech" />
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Monitor & Facebook Auto-Posting -->
+  <script src="/static/monitor.js?v=20261027-neo-tech"></script>
   <style>
 
     body {
@@ -52,6 +54,11 @@
           <i data-lucide="history" class="w-3.5 h-3.5"></i>
           <span>Lịch sử đã tải</span>
           <span id="historyCountBadge" class="bg-slate-800 text-slate-300 text-[10px] px-1.5 py-0.5 rounded-full border border-slate-700">0</span>
+        </button>
+        <button id="tabBtnMonitor" onclick="switchTab('monitor')" class="flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition text-slate-400 hover:text-white">
+          <i data-lucide="rss" class="w-3.5 h-3.5"></i>
+          <span>Kênh theo dõi</span>
+          <span id="monitorPendingBadge" class="hidden bg-rose-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">0</span>
         </button>
       </div>
 
@@ -104,30 +111,32 @@
             <i data-lucide="link" class="w-4 h-4 text-rose-400"></i>
             <span>Nhập link Douyin, Facebook hoặc YouTube cần lấy video:</span>
           </label>
-          <div class="flex items-center gap-2">
-            <button onclick="insertSampleLink('douyin')" class="text-xs text-slate-400 hover:text-rose-400 transition flex items-center gap-1">
-              <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <button onclick="insertSampleLink('douyin')" class="nb-sample-chip">
+              <i data-lucide="sparkles" class="w-3 h-3 text-cyan-400"></i>
               <span>Douyin</span>
             </button>
-            <span class="text-slate-600">|</span>
-            <button onclick="insertSampleLink('facebook')" class="text-xs text-slate-400 hover:text-blue-400 transition flex items-center gap-1">
-              <i data-lucide="facebook" class="w-3.5 h-3.5 text-blue-400"></i>
+            <button onclick="insertSampleLink('facebook')" class="nb-sample-chip">
+              <i data-lucide="facebook" class="w-3 h-3 text-blue-400"></i>
               <span>Facebook</span>
             </button>
-            <span class="text-slate-600">|</span>
-            <button onclick="insertSampleLink('youtube')" class="text-xs text-slate-400 hover:text-red-400 transition flex items-center gap-1">
-              <i data-lucide="youtube" class="w-3.5 h-3.5 text-red-500"></i>
+            <button onclick="insertSampleLink('youtube')" class="nb-sample-chip">
+              <i data-lucide="youtube" class="w-3 h-3 text-red-400"></i>
               <span>YouTube</span>
+            </button>
+            <button onclick="insertSampleLink('bilibili')" class="nb-sample-chip">
+              <i data-lucide="play" class="w-3 h-3 text-sky-400"></i>
+              <span>Bilibili</span>
             </button>
           </div>
         </div>
 
-        <textarea id="urlInput" rows="3" class="w-full bg-slate-950 border border-slate-800 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-xl p-3 text-sm text-slate-100 placeholder-slate-500 resize-none transition outline-none font-mono" placeholder="Dán 1 hoặc nhiều link Douyin, Facebook hoặc YouTube vào đây (mỗi link 1 dòng)...&#10;• Douyin: https://www.douyin.com/...&#10;• Facebook: https://www.facebook.com/reel/1687080395690106&#10;• YouTube: https://www.youtube.com/watch?v=yszxOH4e5eA"></textarea>
+        <textarea id="urlInput" rows="3" class="w-full bg-slate-950 border border-slate-800 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-xl p-3 text-sm text-slate-100 placeholder-slate-500 resize-none transition outline-none font-mono" placeholder="Dán 1 hoặc nhiều link Douyin, Facebook, YouTube hoặc Bilibili (mỗi link 1 dòng)...&#10;• Bilibili: https://www.bilibili.com/video/BV1Pvp46CEQr/"></textarea>
 
         <div class="flex items-center justify-between pt-1">
           <p class="text-xs text-slate-500 flex items-center gap-1.5">
             <i data-lucide="info" class="w-3.5 h-3.5"></i>
-            <span>Hỗ trợ Douyin, Facebook (Reels, Watch) và YouTube. Tự động chọn chất lượng HD cao nhất.</span>
+            <span>Hỗ trợ Douyin, Facebook, YouTube và Bilibili. Bilibili chỉ tải chất lượng tài khoản hiện được phép; đăng nhập/VIP có thể cần cho HD/4K.</span>
           </p>
           <button id="btnParse" onclick="startParsing()" class="flex items-center space-x-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-medium text-sm px-6 py-2.5 rounded-xl shadow-lg shadow-rose-500/25 transition disabled:opacity-50 disabled:cursor-not-allowed">
             <i id="parseIcon" data-lucide="search" class="w-4 h-4"></i>
@@ -135,6 +144,8 @@
           </button>
         </div>
       </div>
+
+      <p id="parseStatus" role="status" aria-live="polite" hidden style="white-space:pre-wrap;padding:12px;border:1px solid #475569;border-radius:8px;"></p>
 
       <!-- Results Section -->
       <div id="resultsSection" class="space-y-4 hidden">
@@ -241,6 +252,159 @@
         </div>
         <p class="text-sm text-slate-400">Chưa có video nào trong thư mục tải về.</p>
         <button onclick="switchTab('new')" class="text-xs bg-rose-600 text-white px-4 py-2 rounded-xl hover:bg-rose-500 transition">Tải video ngay</button>
+      </div>
+    </div>
+
+    <!-- TAB 3: CHANNEL MONITOR & FACEBOOK POSTING -->
+    <div id="tabMonitorSection" class="space-y-4 hidden">
+      <!-- Toolbar -->
+      <div class="nb-panel flex flex-wrap items-center justify-between gap-3" style="padding: 12px 16px;">
+        <div class="flex items-center space-x-2">
+          <span class="nb-chip">Tự động ngầm</span>
+          <span class="text-xs text-slate-400">Kiểm tra video mới định kỳ trên YouTube, Douyin & Facebook Fanpage</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="loadMonitorChannels(); loadPendingVideos();" class="nb-button" title="Làm mới toàn bộ danh sách">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            <span>Làm mới</span>
+          </button>
+          <button onclick="openAddChannelModal()" class="nb-button primary">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>Thêm kênh theo dõi</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Layout: 2 Columns Master-Detail -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <!-- Cột Trái: Danh sách Kênh & Cấu hình FB (5/12 cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          
+          <!-- Card Kênh đang theo dõi & Bảng tin tổng hợp -->
+          <div class="nb-panel space-y-3">
+            <div class="flex items-center justify-between border-b border-[#222730] pb-2.5">
+              <h3 class="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="radio" class="w-4 h-4 text-rose-500"></i>
+                <span>Kênh đang theo dõi</span>
+              </h3>
+              <button onclick="openAddChannelModal()" class="nb-button" style="padding:3px 8px;font-size:11px;" title="Thêm kênh mới">
+                <i data-lucide="plus" class="w-3 h-3"></i> Thêm
+              </button>
+            </div>
+
+            <!-- Nút chọn Bảng tin cập nhật tổng hợp tất cả kênh -->
+            <button id="btnAllChannelsFeed" onclick="selectChannelView('all')" class="nb-all-feed-btn active">
+              <div class="flex items-center gap-2">
+                <i data-lucide="layout-list" class="w-4 h-4 text-rose-400"></i>
+                <span>Bảng cập nhật tổng hợp</span>
+              </div>
+              <span id="allChannelsFeedBadge" class="text-[10px] bg-rose-600/30 text-rose-300 border border-rose-500/40 px-1.5 py-0.5 rounded-full font-semibold">0</span>
+            </button>
+
+            <!-- Tiêu đề danh sách kênh cá nhân -->
+            <div class="text-[11px] font-medium text-slate-400 pt-1 flex items-center justify-between">
+              <span>DANH SÁCH TỪNG KÊNH</span>
+              <span id="totalChannelsCount" class="text-[10px] text-slate-500">0 kênh</span>
+            </div>
+
+            <!-- Danh sách từng kênh -->
+            <div id="monitorChannelsList" class="space-y-2 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar">
+              <!-- Render động qua monitor.js -->
+            </div>
+          </div>
+
+          <!-- Card Cấu hình Facebook Fanpage -->
+          <div class="nb-panel space-y-3">
+            <div class="flex items-center justify-between border-b border-[#222730] pb-2.5">
+              <h3 class="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="facebook" class="w-4 h-4 text-blue-400"></i>
+                <span>Cài đặt Facebook Fanpage</span>
+              </h3>
+              <div id="fbStatusBadge"></div>
+            </div>
+            <p class="text-[11px] text-slate-400">
+              Dùng để tải & đăng video trực tiếp lên Fanpage của bạn bằng Page Access Token (vĩnh viễn).
+            </p>
+            <div class="space-y-2.5 pt-1">
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Page ID</label>
+                <input id="fbPageIdInput" type="text" placeholder="Ví dụ: 104593829103948" class="w-full bg-[#101317] border border-[#222730] rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#45618a]" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Tên Page (Tùy chọn)</label>
+                <input id="fbPageNameInput" type="text" placeholder="Tên Fanpage của bạn" class="w-full bg-[#101317] border border-[#222730] rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#45618a]" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Page Access Token</label>
+                <input id="fbTokenInput" type="password" placeholder="Nhập Never-Expiring Page Token..." class="w-full bg-[#101317] border border-[#222730] rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#45618a] font-mono" />
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="saveFbConfig()" class="nb-button full">
+                  Lưu cấu hình
+                </button>
+                <button id="btnTestFb" onclick="testFbConnection()" class="nb-button primary full">
+                  <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                  <span>Kiểm tra kết nối</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Cột Phải: Video hiển thị theo View (7/12 cols) -->
+        <div class="lg:col-span-7 space-y-3">
+          <div class="nb-panel space-y-3">
+            <!-- Dynamic View Header -->
+            <div class="flex flex-wrap items-center justify-between border-b border-[#222730] pb-2.5 gap-2">
+              <div class="flex items-center space-x-2">
+                <button id="btnBackToAllFeed" onclick="selectChannelView('all')" class="nb-button hidden" style="padding:3px 7px;font-size:11px;" title="Quay lại bảng cập nhật tổng hợp">
+                  <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+                  <span>Tất cả</span>
+                </button>
+                <i id="monitorViewIcon" data-lucide="layout-list" class="w-4 h-4 text-rose-400"></i>
+                <h3 id="monitorViewTitle" class="text-xs font-semibold text-slate-200 uppercase tracking-wider">
+                  Bảng cập nhật tổng hợp
+                </h3>
+                <span id="monitorViewCountBadge" class="text-[10px] bg-[#1a2332] text-slate-300 border border-[#2b3a4f] px-1.5 py-0.5 rounded font-mono">0</span>
+                <span id="monitorViewNote" class="hidden text-[11px] text-amber-300/90 bg-[#161c24] border border-[#2b3a4f] px-2 py-0.5 rounded items-center gap-1.5 max-w-[280px] truncate" title=""></span>
+              </div>
+
+              <!-- Sub-filters: Tất cả | Chưa tải | Đã tải -->
+              <div class="flex items-center gap-1 bg-[#101317] p-1 rounded-md border border-[#222730]">
+                <button onclick="setMonitorStatusFilter('all')" id="subFilterAll" class="nb-subfilter-btn active">Tất cả</button>
+                <button onclick="setMonitorStatusFilter('pending')" id="subFilterPending" class="nb-subfilter-btn">🔴 Chưa tải</button>
+                <button onclick="setMonitorStatusFilter('downloaded')" id="subFilterDownloaded" class="nb-subfilter-btn">✅ Đã tải</button>
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <button id="btnCheckActiveChannel" onclick="checkActiveChannelNow()" class="nb-button" style="padding:3px 8px;font-size:11px;" title="Quét video mới ngay">
+                  <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                  <span>Quét video</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="nb-feed-toolbar" aria-label="Xóa mục khỏi bảng cập nhật">
+              <label class="nb-feed-select-all">
+                <input id="monitorSelectAll" type="checkbox" onchange="selectAllMonitorVideos(this.checked)" />
+                <span>Chọn tất cả đang xem</span>
+              </label>
+              <span id="monitorSelectionCount" class="nb-feed-count" aria-live="polite">Đã chọn 0 / 0</span>
+              <div class="nb-feed-delete-actions">
+                <button id="btnDeleteSelectedMonitor" onclick="deleteMonitorList('selected')" class="nb-button nb-feed-delete" disabled>Xóa đã chọn</button>
+                <button id="btnDeleteDownloadedMonitor" onclick="deleteMonitorList('downloaded')" class="nb-button nb-feed-delete" disabled>Xóa mục đã tải</button>
+                <button id="btnClearMonitorView" onclick="deleteMonitorList('filtered')" class="nb-button nb-feed-delete" disabled>Xóa danh sách đang xem</button>
+              </div>
+              <span class="nb-feed-help">Chỉ gỡ mục khỏi bảng, giữ video đã tải. Áp dụng cho kênh và bộ lọc đang xem.</span>
+            </div>
+
+            <!-- Danh sách video theo view -->
+            <div id="pendingVideosList" class="space-y-3 max-h-[720px] overflow-y-auto pr-1 custom-scrollbar">
+              <!-- Render động qua monitor.js -->
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -808,6 +972,115 @@
         <button onclick="saveAiConfig()" class="px-4 py-2 text-xs rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold transition flex items-center gap-1.5 shadow">
           <i data-lucide="check" class="w-3.5 h-3.5"></i>
           <span>Lưu cấu hình AI</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Thêm Kênh Theo Dõi -->
+  <div id="addChannelModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-semibold text-slate-100 flex items-center gap-2">
+          <i data-lucide="rss" class="w-4 h-4 text-rose-500"></i>
+          <span>Thêm Kênh Theo Dõi</span>
+        </h3>
+        <button onclick="closeAddChannelModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Đường dẫn kênh (URL) <span class="text-rose-400">*</span></label>
+          <input id="addChannelUrl" oninput="onChannelUrlInput()" type="text" placeholder="https://www.youtube.com/@Channel hoặc link Douyin/Facebook" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-rose-500" />
+          <div id="detectedPlatformBadge" class="mt-1"></div>
+          <p class="text-[11px] text-slate-400 mt-1">Douyin dùng link hồ sơ công khai, không cần tài khoản. Lần đầu lấy tối đa 20 video; nếu nguồn giới hạn phiên khách, ứng dụng sẽ báo rõ.</p>
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Tên kênh gợi nhớ (Tùy chọn)</label>
+          <input id="addChannelName" type="text" placeholder="Tự động nhận diện nếu để trống" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-rose-500" />
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Ghi chú cho kênh / page (Tùy chọn)</label>
+          <input id="addChannelNote" type="text" placeholder="Ví dụ: Kênh review phim ngôn tình, nguồn reup lúc 19h..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-rose-500" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-medium text-slate-300 mb-1">Collection đích</label>
+            <select id="addChannelCollection" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-rose-500">
+              <option value="Chung">Chung</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-medium text-slate-300 mb-1">Chu kỳ kiểm tra tự động</label>
+            <div class="flex items-center gap-1.5">
+              <input id="addChannelIntervalVal" type="number" min="1" value="15" placeholder="15" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-rose-500 font-medium" />
+              <select id="addChannelIntervalUnit" class="bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-slate-200 focus:outline-none focus:border-rose-500 shrink-0">
+                <option value="m">Phút</option>
+                <option value="h">Giờ</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-1 mt-1.5">
+              <span class="text-[10px] text-slate-500">Gợi ý:</span>
+              <button type="button" onclick="setIntervalPreset(5,'m')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded transition">5p</button>
+              <button type="button" onclick="setIntervalPreset(15,'m')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded transition">15p</button>
+              <button type="button" onclick="setIntervalPreset(30,'m')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded transition">30p</button>
+              <button type="button" onclick="setIntervalPreset(1,'h')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded transition">1h</button>
+              <button type="button" onclick="setIntervalPreset(2,'h')" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded transition">2h</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeAddChannelModal()" class="nb-button">
+          Hủy
+        </button>
+        <button id="btnSubmitAddChannel" onclick="submitAddChannel()" class="nb-button primary">
+          Thêm kênh
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Đăng Video lên Facebook -->
+  <div id="fbPostModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-semibold text-slate-100 flex items-center gap-2">
+          <i data-lucide="facebook" class="w-4 h-4 text-blue-400"></i>
+          <span>Đăng Video lên Facebook Fanpage</span>
+        </h3>
+        <button onclick="closeFbPostModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Đường dẫn file video MP4</label>
+          <input id="fbPostVideoPath" type="text" readonly class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-400 font-mono text-[11px]" />
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Nội dung bài viết / Caption</label>
+          <textarea id="fbPostCaption" rows="4" placeholder="Nhập tiêu đề, mô tả hoặc hashtag cho video..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-rose-500"></textarea>
+        </div>
+
+        <div id="fbPostStatus" class="hidden text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl"></div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeFbPostModal()" class="nb-button">
+          Hủy
+        </button>
+        <button id="btnSubmitFbPost" onclick="submitFbPost()" class="nb-button primary" style="border-color:#2a4569;background:#18283d;color:#93c5fd;">
+          <i data-lucide="share" class="w-3.5 h-3.5"></i>
+          <span>Đăng lên Fanpage</span>
         </button>
       </div>
     </div>
@@ -2104,20 +2377,35 @@
       currentTab = tab;
       const tabNew = document.getElementById('tabNewSection');
       const tabHist = document.getElementById('tabHistorySection');
+      const tabMon = document.getElementById('tabMonitorSection');
       const btnNew = document.getElementById('tabBtnNew');
       const btnHist = document.getElementById('tabBtnHistory');
+      const btnMon = document.getElementById('tabBtnMonitor');
+
+      const activeBtnCls = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition bg-rose-600 text-white shadow';
+      const inactiveBtnCls = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition text-slate-400 hover:text-white';
+
+      if (tabNew) tabNew.classList.add('hidden');
+      if (tabHist) tabHist.classList.add('hidden');
+      if (tabMon) tabMon.classList.add('hidden');
+
+      if (btnNew) btnNew.className = inactiveBtnCls;
+      if (btnHist) btnHist.className = inactiveBtnCls;
+      if (btnMon) btnMon.className = inactiveBtnCls;
 
       if (tab === 'new') {
-        tabNew.classList.remove('hidden');
-        tabHist.classList.add('hidden');
-        btnNew.className = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition bg-rose-600 text-white shadow';
-        btnHist.className = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition text-slate-400 hover:text-white';
-      } else {
-        tabNew.classList.add('hidden');
-        tabHist.classList.remove('hidden');
-        btnHist.className = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition bg-rose-600 text-white shadow';
-        btnNew.className = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition text-slate-400 hover:text-white';
+        if (tabNew) tabNew.classList.remove('hidden');
+        if (btnNew) btnNew.className = activeBtnCls;
+      } else if (tab === 'history') {
+        if (tabHist) tabHist.classList.remove('hidden');
+        if (btnHist) btnHist.className = activeBtnCls;
         loadHistory();
+      } else if (tab === 'monitor') {
+        if (tabMon) tabMon.classList.remove('hidden');
+        if (btnMon) btnMon.className = activeBtnCls;
+        if (typeof loadMonitorChannels === 'function') loadMonitorChannels();
+        if (typeof loadPendingVideos === 'function') loadPendingVideos();
+        if (typeof loadFbConfig === 'function') loadFbConfig();
       }
       refreshIcons();
     }
@@ -2789,6 +3077,8 @@
         sample = 'https://www.facebook.com/reel/1687080395690106';
       } else if (type === 'youtube') {
         sample = 'https://www.youtube.com/watch?v=yszxOH4e5eA';
+      } else if (type === 'bilibili') {
+        sample = 'https://www.bilibili.com/video/BV1Pvp46CEQr/';
       }
       const input = document.getElementById('urlInput');
       if (input.value.trim()) {
@@ -2801,53 +3091,7 @@
     // ----------------------------------------------------
     // TAB 1: PARSING & DOWNLOADING
     // ----------------------------------------------------
-    async function startParsing() {
-      const text = document.getElementById('urlInput').value.trim();
-      if (!text) {
-        return showToast('Vui lòng nhập link Douyin, Facebook hoặc YouTube trước khi phân tích', true);
-      }
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
-      const btn = document.getElementById('btnParse');
-      const parseText = document.getElementById('parseText');
-      const parseIcon = document.getElementById('parseIcon');
-
-      btn.disabled = true;
-      parseText.innerText = 'Đang phân tích...';
-      parseIcon.setAttribute('data-lucide', 'loader-2');
-      parseIcon.classList.add('animate-spin');
-      refreshIcons();
-
-      try {
-        const res = await fetch('/api/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ urls: lines })
-        });
-        const data = await res.json();
-
-        if (res.ok && data.videos && data.videos.length > 0) {
-          data.videos.forEach(newV => {
-            if (!videosData.some(v => v.id === newV.id)) {
-              videosData.push(newV);
-            }
-          });
-          saveParsedVideos();
-          renderVideoList();
-          showToast(`Phân tích thành công ${data.videos.length} video!`);
-        } else {
-          showToast(data.detail || 'Không tìm thấy video nào từ link đã nhập', true);
-        }
-      } catch (e) {
-        showToast('Lỗi khi phân tích link. Vui lòng thử lại.', true);
-      } finally {
-        btn.disabled = false;
-        parseText.innerText = 'Phân tích link';
-        parseIcon.setAttribute('data-lucide', 'search');
-        parseIcon.classList.remove('animate-spin');
-        refreshIcons();
-      }
-    }
+    async function startParsing() { return window.youtubeParse(); }
 
     function formatDuration(seconds) {
       if (!seconds || isNaN(seconds)) return '00:00';
@@ -2915,10 +3159,14 @@
           platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-blue-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="facebook" class="w-2.5 h-2.5"></i> Facebook</span>`;
         } else if (v.platform === 'youtube') {
           platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-red-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="youtube" class="w-2.5 h-2.5"></i> YouTube</span>`;
+        } else if (v.platform === 'bilibili') {
+          platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-sky-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow">Bilibili</span>`;
         }
 
         const proxyCover = `/api/proxy-media?url=${encodeURIComponent(v.cover_url)}`;
         const proxyPlay = `/api/proxy-media?url=${encodeURIComponent(v.play_url)}`;
+        const previewAction = v.platform === 'bilibili' ? `window.open(${jsAttrArg(v.play_url)}, '_blank', 'noopener')` : `openPreviewModal(${jsAttrArg(v.id)}, false)`;
+        const previewLabel = v.platform === 'bilibili' ? 'Mở trang gốc' : 'Xem thử';
         const card = document.createElement('div');
         card.id = `card-${v.id}`;
         card.className = 'bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg hover:border-slate-700 transition flex flex-col';
@@ -2949,7 +3197,7 @@
             </div>
 
             <!-- Play Preview Overlay Button -->
-            <button onclick="openPreviewModal(${jsAttrArg(v.id)}, false)" class="absolute inset-0 m-auto w-12 h-12 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg transform scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 transition duration-200">
+            <button onclick="${previewAction}" class="absolute inset-0 m-auto w-12 h-12 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg transform scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 transition duration-200">
               <i data-lucide="play" class="w-5 h-5 ml-0.5 fill-current"></i>
             </button>
           </div>
@@ -2979,9 +3227,9 @@
               </div>
 
               <div class="flex items-center space-x-2">
-                <button onclick="openPreviewModal(${jsAttrArg(v.id)}, false)" class="flex-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 rounded-xl transition flex items-center justify-center gap-1.5">
+                <button onclick="${previewAction}" class="flex-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 rounded-xl transition flex items-center justify-center gap-1.5">
                   <i data-lucide="eye" class="w-3.5 h-3.5 text-indigo-400"></i>
-                  <span>Xem thử</span>
+                  <span>${previewLabel}</span>
                 </button>
                 <button id="btnDl-${escapeHtml(v.id)}" onclick="downloadSingle(${jsAttrArg(v.id)})" class="flex-1 text-xs bg-rose-600 hover:bg-rose-500 text-white py-2 rounded-xl transition flex items-center justify-center gap-1.5 shadow shadow-rose-600/20">
                   <i data-lucide="download" class="w-3.5 h-3.5"></i>
@@ -2996,7 +3244,7 @@
         container.appendChild(card);
 
         // Capture actual first frame from video stream (chỉ cho Douyin/Facebook, không phải YouTube)
-        if (v.platform !== 'youtube') {
+        if (v.platform !== 'youtube' && v.platform !== 'bilibili') {
           captureFirstFrame(proxyPlay, `imgThumb-${v.id}`);
         }
       });
@@ -3061,10 +3309,11 @@
           showToast(`Bắt đầu tải vào thư mục [${currentSelectedCollection}]!`);
           startTaskPolling();
         } else {
-          showToast('Lỗi khi kích hoạt tải video', true);
+          const data=await res.json().catch(()=>({}));
+          window.youtubeDownloadError?.([videoId],typeof data.detail==='string'?data.detail:'Không bắt đầu được lượt tải. Hãy thử lại.');
         }
       } catch (e) {
-        showToast('Lỗi kết nối server', true);
+        window.youtubeDownloadError?.([videoId],'Không kết nối được Nambeo để bắt đầu tải video. Hãy mở lại trang do run.bat khởi động.');
       }
     }
 
@@ -3094,10 +3343,11 @@
           showToast(`Bắt đầu tải ${selectedIds.length} video vào thư mục [${currentSelectedCollection}]!`);
           startTaskPolling();
         } else {
-          showToast('Lỗi khi kích hoạt tải', true);
+          const data=await res.json().catch(()=>({}));
+          window.youtubeDownloadError?.(selectedIds,typeof data.detail==='string'?data.detail:'Không bắt đầu được lượt tải. Hãy thử lại.');
         }
       } catch (e) {
-        showToast('Lỗi kết nối server', true);
+        window.youtubeDownloadError?.(selectedIds,'Không kết nối được Nambeo để bắt đầu tải các video đã chọn.');
       }
     }
 
@@ -3124,7 +3374,16 @@
 
           progressBox.classList.remove('hidden');
 
-          if (t.status === 'downloading') {
+          if (t.status === 'waiting') {
+            anyActive = true;
+            pText.textContent = 'Đang chờ';
+            sText.textContent = t.speed || 'Đang chờ lượt YouTube';
+            if(btnDl){btnDl.disabled=true;btnDl.textContent='Đang chờ…';}
+          } else if (t.status === 'paused') {
+            pText.textContent = 'Tạm dừng';
+            sText.textContent = t.error || 'Kiểm tra phiên YouTube để tiếp tục.';
+            if(btnDl){btnDl.disabled=false;btnDl.textContent='Kết nối YouTube';btnDl.onclick=()=>window.openYouTubeSettings();}
+          } else if (t.status === 'downloading') {
             anyActive = true;
             bar.style.width = `${t.percent}%`;
             pText.innerText = `${t.percent}%`;
@@ -3278,6 +3537,8 @@
           platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-blue-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="facebook" class="w-2.5 h-2.5"></i> FB</span>`;
         } else if (v.platform === 'youtube') {
           platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-red-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow"><i data-lucide="youtube" class="w-2.5 h-2.5"></i> YouTube</span>`;
+        } else if (v.platform === 'bilibili') {
+          platformBadge = `<span class="nb-platform text-[10px] font-semibold bg-sky-600/95 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow">Bilibili</span>`;
         }
 
         const card = document.createElement('div');
@@ -3372,6 +3633,9 @@
               <button onclick="openHistoryFile(${jsAttrArg(encodeURIComponent(v.best_video_rel || v.rel_path))})" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 p-2 rounded-xl transition" title="Mở bằng phần mềm trên máy">
                 <i data-lucide="external-link" class="w-3.5 h-3.5 text-slate-400"></i>
               </button>
+              <button onclick="openFbPostModal(${jsAttrArg(v.rel_path)}, ${jsAttrArg(v.title || '')})" class="text-xs bg-blue-950/40 hover:bg-blue-600/80 text-blue-400 hover:text-white p-2 rounded-xl border border-blue-900/40 transition" title="Đăng video này lên Facebook Fanpage">
+                <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+              </button>
               ${v.has_backup ? `
                 <button onclick="confirmRestoreOriginal(${jsAttrArg(encodeURIComponent(v.rel_path))})" class="text-xs bg-amber-950/40 hover:bg-amber-800/60 text-amber-300 p-2 rounded-xl border border-amber-700/40 transition" title="Khôi phục lại video gốc ban đầu (từ file .backup.mp4)">
                   <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
@@ -3406,6 +3670,7 @@
           if (handler.startsWith('confirmDeleteVideo')) { button.textContent = 'Xóa video'; button.dataset.danger = ''; }
           if (handler.startsWith('openStudioModal')) button.textContent = 'Cắt và chỉnh video';
           if (handler.startsWith('openTranscriptModal')) { button.textContent='Xuất nâng cao (công cụ cũ)'; button.removeAttribute('onclick'); button.onclick=()=>openLegacyTranscriptModal(encodeURIComponent(v.rel_path)); }
+          if (handler.startsWith('openFbPostModal')) button.textContent = 'Đăng lên Facebook';
           items.append(button);
         });
         menu.append(menuTitle, items);oldActions.replaceWith(secondary, menu);
@@ -3581,7 +3846,7 @@
         const relPath = decodeURIComponent(idOrRelPath);
         currentPreviewRelPath = relPath;
         const item = historyVideos.find(h => h.rel_path === relPath || h.filename === relPath);
-        const pTag = item?.platform === 'youtube' ? '[YouTube]' : (item?.platform === 'facebook' ? '[Facebook]' : '[Douyin]');
+        const pTag = item?.platform === 'youtube' ? '[YouTube]' : (item?.platform === 'facebook' ? '[Facebook]' : (item?.platform === 'bilibili' ? '[Bilibili]' : '[Douyin]'));
         title.innerText = item ? `${pTag} [${item.collection || 'Chung'}] ${item.title}` : relPath;
         const activeRel = (item && item.best_video_rel) ? item.best_video_rel : relPath;
         streamUrl = `/api/history/stream/${encodeURIComponent(activeRel)}?t=${Date.now()}`;
@@ -3607,7 +3872,7 @@
         if (edPanel) edPanel.classList.add('hidden');
         const v = videosData.find(item => item.id === idOrRelPath);
         if (!v) return;
-        const pTag = v.platform === 'youtube' ? '[YouTube] ' : (v.platform === 'facebook' ? '[Facebook] ' : '[Douyin] ');
+        const pTag = v.platform === 'youtube' ? '[YouTube] ' : (v.platform === 'facebook' ? '[Facebook] ' : (v.platform === 'bilibili' ? '[Bilibili] ' : '[Douyin] '));
         title.innerText = `${pTag}${v.title}`;
         streamUrl = `/api/proxy-media?url=${encodeURIComponent(v.play_url)}`;
         btnActionText.innerText = 'Tải video này';
@@ -6280,10 +6545,12 @@
     loadHistoryCount();
     loadSavedSubStyle();
     updateSubStyleUI();
+    if (typeof initMonitor === 'function') initMonitor();
   </script>
   <link rel="stylesheet" href="/static/voices.css?v=2">
   <script src="/static/voices.js?v=2"></script>
-  <script src="/static/app.js?v=20261017-workflow2"></script>
+  <script src="/static/app.js?v=20261027-neo-tech"></script>
+  <script src="/static/youtube.js?v=20261025-2"></script>
   <script src="/static/facebook-pages.js?v=20261027-1"></script>
 </body>
 </html>

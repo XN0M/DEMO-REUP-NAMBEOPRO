@@ -6,10 +6,24 @@
     document.title='Nambeo · Video Studio';
     const main=document.querySelector('body>main'),oldHeader=document.querySelector('body>header');
     const sidebar=node('aside',undefined,'nb-sidebar');sidebar.setAttribute('aria-label','Điều hướng chính');
-    const brand=node('div',undefined,'nb-brand');brand.append(node('span','N','nb-logo'),node('span','Nambeo'));sidebar.append(brand);
+    const brand=node('div',undefined,'nb-brand');
+    const logoBox=node('span','⚡','nb-logo');
+    const brandText=node('div',undefined,'nb-brand-text');
+    brandText.append(node('span','Nambeo Pro','nb-brand-title'),node('span','AI STUDIO','nb-brand-sub'));
+    brand.append(logoBox,brandText);
+    sidebar.append(brand);
     const nav=node('nav');const navButtons={};
     const badge=document.getElementById('historyCountBadge');
-    for(const [key,label,glyph] of [['new','Tải video','↓'],['history','Thư viện','▦'],['settings','Cài đặt','⚙']]){const b=action('',()=>navigate(key),'nb-nav');b.append(node('span',glyph),node('span',label));b.dataset.page=key;if(key==='history')b.append(badge);navButtons[key]=b;nav.append(b);}
+    const monitorBadge=document.getElementById('monitorPendingBadge');
+    for(const [key,label,glyph] of [['new','Tải video','⚡'],['history','Thư viện','📁'],['monitor','Kênh theo dõi','📡'],['settings','Cài đặt','⚙']]){
+      const b=action('',()=>navigate(key),'nb-nav');
+      b.append(node('span',glyph),node('span',label));
+      b.dataset.page=key;
+      if(key==='history'&&badge)b.append(badge);
+      if(key==='monitor'&&monitorBadge)b.append(monitorBadge);
+      navButtons[key]=b;
+      nav.append(b);
+    }
     sidebar.append(nav,node('div','Không gian làm việc video của bạn','nb-sidebar-foot'));document.body.prepend(sidebar);
     document.getElementById('toast').setAttribute('role','status');document.getElementById('toast').setAttribute('aria-live','polite');
     const pageHeader=node('div',undefined,'nb-page-header'),heading=node('div');heading.append(node('div','WORKSPACE','nb-kicker'),node('h1','Tải video'),node('p','Chọn thư mục, thêm đường dẫn và bắt đầu tải.'));pageHeader.append(heading,node('span','Lưu trên máy của bạn','nb-chip'));main.prepend(pageHeader);
@@ -17,11 +31,43 @@
     const settings=node('section',undefined,'nb-settings hidden');settings.id='tabSettingsSection';
     const storage=node('section',undefined,'nb-panel');storage.append(node('h2','Thư mục tải gốc'),node('p','Các thư mục video và tài nguyên Studio được lưu tại vị trí này.'),folderPanel);settings.append(storage);
     const ai=node('section',undefined,'nb-panel');ai.append(node('h2','Dịch thuật và giọng đọc'),node('p','Quản lý nhà cung cấp AI, model và khóa API được dùng trong ứng dụng.'));
-    const aiButton=document.getElementById('btnAiSettingsHeader');aiButton.className='nb-button';aiButton.querySelectorAll('.hidden').forEach(e=>e.classList.remove('hidden'));ai.append(aiButton);settings.append(ai);main.append(settings);
+    const aiButton=document.getElementById('btnAiSettingsHeader');aiButton.className='nb-button';aiButton.querySelectorAll('.hidden').forEach(e=>e.classList.remove('hidden'));ai.append(aiButton);settings.append(ai);
+    const fbSec=node('section',undefined,'nb-panel');fbSec.append(node('h2','Cấu hình Facebook Fanpage'),node('p','Quản lý Page ID và Page Access Token để đăng video trực tiếp lên Fanpage.'));
+    const fbLinkBtn=action('Mở trang quản lý Fanpage & Kênh theo dõi →',()=>navigate('monitor'),'nb-button');fbSec.append(fbLinkBtn);settings.append(fbSec);
+    main.append(settings);
     oldHeader.setAttribute('aria-hidden','true');
     const originalSwitch=window.switchTab;
     window.switchTab=tab=>navigate(tab);
-    function navigate(page){settings.classList.toggle('hidden',page!=='settings');if(page==='settings'){document.getElementById('tabNewSection').classList.add('hidden');document.getElementById('tabHistorySection').classList.add('hidden');}else if(page!=='history'||document.getElementById('tabHistorySection').classList.contains('hidden'))originalSwitch(page);for(const [key,b] of Object.entries(navButtons)){b.classList.toggle('active',key===page);if(key===page)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}heading.querySelector('h1').textContent={new:'Tải video',history:'Thư viện',settings:'Cài đặt'}[page];heading.querySelector('p').textContent={new:'Chọn thư mục, thêm đường dẫn và bắt đầu tải.',history:'Sắp xếp video và tiếp tục công việc trong Studio.',settings:'Thiết lập nơi lưu và dịch vụ cho không gian làm việc.'}[page];}
+    function navigate(page){
+      settings.classList.toggle('hidden',page!=='settings');
+      const monSec=document.getElementById('tabMonitorSection');
+      if(monSec)monSec.classList.toggle('hidden',page!=='monitor');
+      const tabNew=document.getElementById('tabNewSection');
+      const tabHist=document.getElementById('tabHistorySection');
+
+      if(page==='settings'){
+        if(tabNew)tabNew.classList.add('hidden');
+        if(tabHist)tabHist.classList.add('hidden');
+      }else if(page==='monitor'){
+        if(tabNew)tabNew.classList.add('hidden');
+        if(tabHist)tabHist.classList.add('hidden');
+        if(typeof loadMonitorChannels==='function')loadMonitorChannels();
+        if(typeof loadPendingVideos==='function')loadPendingVideos();
+        if(typeof loadFbConfig==='function')loadFbConfig();
+      }else{
+        if(monSec)monSec.classList.add('hidden');
+        if(page!=='history'||tabHist.classList.contains('hidden'))originalSwitch(page);
+      }
+      for(const [key,b] of Object.entries(navButtons)){
+        b.classList.toggle('active',key===page);
+        if(key===page)b.setAttribute('aria-current','page');
+        else b.removeAttribute('aria-current');
+      }
+      heading.querySelector('h1').textContent={new:'Tải video',history:'Thư viện',monitor:'Kênh theo dõi & Đăng bài',settings:'Cài đặt'}[page]||'Nambeo';
+      heading.querySelector('p').textContent={new:'Chọn thư mục, thêm đường dẫn và bắt đầu tải.',history:'Sắp xếp video và tiếp tục công việc trong Studio.',monitor:'Tự động kiểm tra video mới trên các nền tảng và quản lý đăng bài Facebook.',settings:'Thiết lập nơi lưu và dịch vụ cho không gian làm việc.'}[page]||'';
+      const chip=pageHeader.querySelector('.nb-chip');
+      if(chip) chip.textContent={new:'Lưu trên máy của bạn',history:'Thư viện cục bộ',monitor:'Chạy ngầm tự động',settings:'Cấu hình hệ thống'}[page]||'';
+    }
     const history=document.getElementById('tabHistorySection'),grid=document.getElementById('historyGrid');
     const tools=node('div',undefined,'nb-library-tools');const search=node('input');search.id='historySearch';search.type='search';search.placeholder='Tìm tiêu đề hoặc tên file…';search.setAttribute('aria-label','Tìm video trong thư mục');const sort=node('select');sort.id='historySort';sort.setAttribute('aria-label','Sắp xếp video');for(const [value,text] of [['newest','Mới nhất'],['oldest','Cũ nhất'],['name','Tên A–Z']]){const option=node('option',text);option.value=value;sort.append(option);}const all=document.getElementById('checkAllHistory').closest('label');tools.append(search,sort,all);history.insertBefore(tools,document.getElementById('historyBulkActionBar'));search.oninput=()=>renderHistoryCards();sort.onchange=()=>renderHistoryCards();
     // Hide bulk actions when nothing is selected, preserving the standalone select-all control.
@@ -29,9 +75,9 @@
     document.getElementById('historyBulkActionBar').classList.add('hidden');
     const download=document.getElementById('downloadFolderName');if(download)download.closest('section').id='downloadFolderPanel';
     const downloadSummary=node('section',undefined,'nb-panel hidden');downloadSummary.id='downloadSummary';downloadSummary.setAttribute('aria-live','polite');document.getElementById('resultsSection').append(downloadSummary);
-    window.updateDownloadSummary=tasks=>{const shown=Object.entries(tasks).filter(([id])=>document.getElementById(`progressBox-${id}`)).map(([,task])=>task);if(!shown.length)return;const success=shown.filter(t=>t.status==='completed').length,failed=shown.filter(t=>t.status==='failed').length,remaining=shown.length-success-failed;downloadSummary.classList.remove('hidden');downloadSummary.replaceChildren(node('h2',remaining?'Đang tải video':failed?(success?'Hoàn tất một phần':'Tải video thất bại'):'Đã tải xong'),node('p',`${success} thành công · ${failed} thất bại${remaining?` · ${remaining} đang xử lý`:''}`));};
+    window.updateDownloadSummary=tasks=>{const shown=Object.entries(tasks).filter(([id])=>document.getElementById(`progressBox-${id}`)).map(([,task])=>task);if(!shown.length)return;const success=shown.filter(t=>t.status==='completed').length,failed=shown.filter(t=>t.status==='failed').length,paused=shown.filter(t=>t.status==='paused').length,remaining=shown.length-success-failed-paused;downloadSummary.classList.remove('hidden');downloadSummary.replaceChildren(node('h2',remaining?'Đang tải video':paused?'YouTube đang tạm dừng':failed?(success?'Hoàn tất một phần':'Tải video thất bại'):'Đã tải xong'),node('p',`${success} thành công · ${failed} thất bại${paused?` · ${paused} tạm dừng`:''}${remaining?` · ${remaining} đang xử lý`:''}`));};
     const originalLoad=window.loadHistory;window.loadHistory=async()=>{const summary=document.getElementById('historySummary');summary.textContent='Đang tải thư viện…';grid.setAttribute('aria-busy','true');try{await originalLoad();}finally{grid.removeAttribute('aria-busy');}};
-    navigate(currentTab==='history'?'history':'new');
+    navigate(currentTab==='history'?'history':currentTab==='monitor'?'monitor':'new');
     // Trap focus in the topmost visible dialog, including nested Studio popups.
     const openers=new WeakMap();let lastActive=document.activeElement,lastOutside=lastActive;
     document.addEventListener('focusin',()=>{lastActive=document.activeElement;if(!lastActive.closest('.fixed.inset-0,.ns'))lastOutside=lastActive;});

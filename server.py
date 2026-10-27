@@ -9,7 +9,9 @@ import threading
 import math
 import re
 import urllib.parse
-from typing import Dict, List, Optional
+import secrets
+from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
 
 # Force UTF-8 on Windows
 os.environ["PYTHONIOENCODING"] = "utf-8"
@@ -46,8 +48,28 @@ from core.subtitler import DouyinSubtitler
 from core.editor import VideoEditor
 from core.vocal_remover import VocalRemover
 from core.tts_runtime import ProviderUnavailable
+from core.app_paths import RESOURCE_ROOT, DATA_ROOT, DEFAULT_VIDEO_ROOT
+from core.youtube_session import YouTubeError
 
-app = FastAPI(title="Douyin Video Downloader MVP")
+@asynccontextmanager
+async def app_lifespan(app):
+    from core import monitor
+    monitor.start_scheduler()
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(monitor.stop_scheduler)
+
+
+app = FastAPI(title="Nambeo", version="0.1.0-internal", lifespan=app_lifespan)
+
+
+@app.get('/api/instance/ping', status_code=204)
+def instance_ping(token: str):
+    expected = os.environ.get('NAMBEO_INSTANCE_TOKEN', '')
+    if not expected or not secrets.compare_digest(token, expected):
+        raise HTTPException(403, 'Phiên Nambeo không hợp lệ')
+    return Response(status_code=204)
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,10 +79,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
+BASE_DIR = str(RESOURCE_ROOT)
+DATA_DIR = str(DATA_ROOT)
+DEFAULT_DOWNLOAD_DIR = str(DEFAULT_VIDEO_ROOT)
 os.makedirs(DEFAULT_DOWNLOAD_DIR, exist_ok=True)
-CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+os.makedirs(DATA_DIR, exist_ok=True)
+CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
 
 def load_app_config() -> dict:
     if os.path.exists(CONFIG_FILE):
@@ -86,7 +110,9 @@ def save_app_config(cfg: dict):
         print(f"Error saving config: {e}")
 
 # State
-current_download_dir = DEFAULT_DOWNLOAD_DIR
+_saved_download_dir = load_app_config().get('download_dir')
+current_download_dir = (_saved_download_dir if isinstance(_saved_download_dir, str) and
+                        os.path.isdir(_saved_download_dir) else DEFAULT_DOWNLOAD_DIR)
 extractor = DouyinExtractor()
 downloader = DouyinDownloader(default_download_dir=current_download_dir)
 transcriber = DouyinTranscriber()
@@ -117,7 +143,7 @@ def _release_source_job(path: str):
         active_source_jobs.discard(_source_job_key(path))
 
 def _download_in_progress(path):
-    return any(t.get("status") not in ("completed", "failed") and
+    return any(t.get("status") not in ("completed", "failed", "paused") and
                _source_job_key(t.get("file_path", "")) == _source_job_key(path)
                for t in downloader.tasks.values())
 
@@ -407,13 +433,16 @@ async def save_api_key(req: ApiKeyRequest):
 @app.post("/api/config")
 async def update_config(req: ConfigRequest):
     global current_download_dir
-    new_dir = req.download_dir.strip()
+    new_dir = os.path.abspath(os.path.expanduser(req.download_dir.strip())) if req.download_dir.strip() else ''
     if not new_dir:
         raise HTTPException(status_code=400, detail="Đường dẫn thư mục không được để trống")
     try:
         os.makedirs(new_dir, exist_ok=True)
         current_download_dir = new_dir
         downloader.default_download_dir = new_dir
+        cfg = load_app_config()
+        cfg['download_dir'] = new_dir
+        save_app_config(cfg)
         return {"status": "success", "download_dir": current_download_dir}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Không thể tạo/truy cập thư mục: {str(e)}")
@@ -461,12 +490,17 @@ async def create_collection(req: CollectionCreateRequest):
     return {"status": "success", "collection": safe_name}
 
 @app.post("/api/parse")
-async def parse_videos(req: ParseRequest):
+async def parse_videos(req: ParseRequest, request: Request):
     valid_urls = [u.strip() for u in req.urls if u.strip()]
     if not valid_urls:
-        raise HTTPException(status_code=400, detail="Vui lòng nhập ít nhất một link Douyin")
+        raise HTTPException(status_code=400, detail="Vui lòng nhập ít nhất một link video")
+    from core.youtube_api import guard_session_use
+    from core.youtube_session import youtube_host
+    if any(youtube_host(url) for url in valid_urls):
+        await asyncio.to_thread(guard_session_use, request)
 
     results = []
+    failed = []
     for raw_url in valid_urls:
         try:
             info = await extractor.parse_single_url(raw_url)
@@ -475,18 +509,23 @@ async def parse_videos(req: ParseRequest):
                 # Return without heavy raw_detail
                 item = {k: v for k, v in info.items() if k != "raw_detail"}
                 results.append(item)
+        except YouTubeError as e:
+            failed.append({'url': raw_url, 'code': e.code, 'error': str(e)})
         except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            failed.append({'url': raw_url, 'code': 'source_error', 'error': str(e)})
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Lỗi không xác định: {str(e)}")
 
     if not results:
+        if failed:
+            return JSONResponse(status_code=400, content={'detail': failed[0]['error'],
+                'code': failed[0]['code'], 'failed': failed})
         raise HTTPException(
             status_code=404,
-            detail="Không tìm thấy video từ link đã nhập. Vui lòng kiểm tra lại link Douyin hoặc Facebook."
+            detail="Không tìm thấy video từ link đã nhập. Vui lòng kiểm tra lại link video."
         )
 
-    return {"status": "success", "count": len(results), "videos": results}
+    return {"status": "partial" if failed else "success", "count": len(results), "videos": results, "failed": failed}
 
 
 @app.get("/api/proxy-media")
@@ -497,6 +536,8 @@ async def proxy_media(request: Request, url: str = Query(...)):
         referer = "https://www.facebook.com/"
     elif "ytimg.com" in decoded_url or "youtube.com" in decoded_url or "googlevideo.com" in decoded_url:
         referer = "https://www.youtube.com/"
+    elif "bilibili.com" in decoded_url or "hdslb.com" in decoded_url:
+        referer = "https://www.bilibili.com/"
     else:
         referer = "https://www.douyin.com/"
 
@@ -565,7 +606,11 @@ async def _bg_download_task(v_info: Dict, target_dir: str, collection: Optional[
     await downloader.download_video(v_info, target_dir=target_dir, collection=collection)
 
 @app.post("/api/download")
-async def trigger_download(req: DownloadRequest, background_tasks: BackgroundTasks):
+async def trigger_download(req: DownloadRequest, background_tasks: BackgroundTasks, request: Request):
+    from core.youtube_api import guard_session_use
+    candidates = [parsed_cache.get(v_id, {}) for v_id in req.video_ids] + (req.videos or [])
+    if any(isinstance(item, dict) and item.get('platform') == 'youtube' for item in candidates):
+        await asyncio.to_thread(guard_session_use, request)
     target_dir = req.target_dir or current_download_dir
     os.makedirs(target_dir, exist_ok=True)
     col = req.collection.strip() if req.collection else "Chung"
@@ -653,7 +698,7 @@ async def get_history():
                 # Try reading json metadata
                 title = base_name
                 author = "User"
-                platform = "facebook" if ("facebook" in f.lower() or "fb_" in f.lower()) else ("youtube" if ("youtube" in f.lower() or "yt_" in f.lower()) else "douyin")
+                platform = "bilibili" if "bilibili" in f.lower() else ("facebook" if ("facebook" in f.lower() or "fb_" in f.lower()) else ("youtube" if ("youtube" in f.lower() or "yt_" in f.lower()) else "douyin"))
                 duration = 0
                 resolution = "HD"
                 if os.path.exists(json_path):
@@ -661,9 +706,9 @@ async def get_history():
                         with open(json_path, "r", encoding="utf-8") as jf:
                             meta = json.load(jf)
                             platform = meta.get("platform", platform)
-                            if platform in ["facebook", "youtube"]:
+                            if platform in ["facebook", "youtube", "bilibili"]:
                                 title = meta.get("title", base_name)
-                                author = meta.get("author", "YouTube Creator" if platform == "youtube" else "Facebook User")
+                                author = meta.get("author", "Bilibili Creator" if platform == "bilibili" else "YouTube Creator" if platform == "youtube" else "Facebook User")
                                 resolution = meta.get("resolution", "HD")
                                 duration = meta.get("duration", 0)
                             else:
@@ -2154,6 +2199,8 @@ from core.studio_api import attach as attach_studio
 studio_service = attach_studio(sys.modules[__name__])
 from core.tts_api import attach as attach_tts
 attach_tts(sys.modules[__name__])
+from core.youtube_api import attach as attach_youtube
+attach_youtube(sys.modules[__name__])
 
 # Serve Frontend
 web_dir = os.path.join(BASE_DIR, "web")
@@ -2171,6 +2218,299 @@ app.mount("/static", StaticFiles(directory=web_dir), name="static")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=False)
+
+
+# ═══════════════════════════════════════════════════════════════
+# CHANNEL MONITOR & FACEBOOK POSTER — API
+# ═══════════════════════════════════════════════════════════════
+from core import monitor as _monitor
+from core import fb_poster as _fb_poster
+from core.monitor_errors import MonitorError
+
+
+@app.exception_handler(MonitorError)
+async def monitor_error_response(request, error):
+    return JSONResponse(status_code=error.status_code,
+                        content={"detail": str(error), "code": error.code})
+
+# Scheduler starts/stops with FastAPI; importing this module has no network effects.
+
+# SSE: broadcast video mới tới frontend
+_sse_queues: list = []
+
+def _broadcast_new_videos(new_vids: list) -> None:
+    import json as _json
+    payload = _json.dumps({"type": "new_videos" if new_vids else "channel_status", "data": new_vids}, ensure_ascii=False)
+    for q in list(_sse_queues):
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            pass
+
+_monitor.register_new_video_callback(_broadcast_new_videos)
+
+
+# ── Pydantic models ──────────────────────────────────────────
+
+class ChannelCreateRequest(BaseModel):
+    platform: str
+    url: str
+    name: Optional[str] = None
+    collection: str = "Chung"
+    check_interval_minutes: int = 15
+    channel_id: Optional[str] = None
+    sec_uid: Optional[str] = None
+    page_id: Optional[str] = None
+    note: Optional[str] = ""
+
+class ChannelUpdateRequest(BaseModel):
+    active: Optional[bool] = None
+    name: Optional[str] = None
+    collection: Optional[str] = None
+    check_interval_minutes: Optional[int] = None
+    note: Optional[str] = None
+
+class FbConfigRequest(BaseModel):
+    page_id: str
+    page_access_token: Optional[str] = None
+    page_name: str = ""
+
+class FbPostRequest(BaseModel):
+    mp4_path: str
+    caption: str = ""
+
+
+# ── Channels ────────────────────────────────────────────────
+
+@app.get("/api/channels")
+async def api_get_channels():
+    return {"channels": _monitor.load_channels()}
+
+
+@app.post("/api/channels")
+async def api_add_channel(req: ChannelCreateRequest):
+    platform = req.platform.lower()
+    if platform not in ("youtube", "douyin", "facebook"):
+        raise HTTPException(400, f"Platform không hỗ trợ: {platform}")
+    _monitor.validate_interval(platform, req.check_interval_minutes)
+    if _monitor.detect_platform(req.url.strip()) != platform:
+        # Douyin share text is normalized by the collector below.
+        if platform != "douyin":
+            raise HTTPException(422, "URL không khớp nền tảng kênh đã chọn.")
+
+    data = {
+        "platform": platform,
+        "url": req.url,
+        "name": req.name or req.url,
+        "collection": req.collection,
+        "check_interval_minutes": req.check_interval_minutes,
+        "note": (req.note or "").strip(),
+    }
+
+    if platform == "youtube":
+        channel_id = req.channel_id
+        if not channel_id:
+            channel_id, auto_name = await asyncio.to_thread(_monitor.resolve_youtube_channel_id, req.url)
+            if not req.name and auto_name:
+                data["name"] = auto_name
+        data["channel_id"] = channel_id or ""
+
+    elif platform == "douyin":
+        from core.douyin_monitor import resolve_profile
+        profile_url, sec_uid = await asyncio.to_thread(resolve_profile, req.url)
+        data["url"] = profile_url
+        data["sec_uid"] = sec_uid
+
+    elif platform == "facebook":
+        page_id = req.page_id
+        if not page_id:
+            m = re.search(r"facebook\.com/(?:pages/[^/]+/)?(\d+)", req.url)
+            page_id = m.group(1) if m else None
+        if not page_id:
+            raise HTTPException(422, "Không tìm thấy Page ID. Hãy nhập thủ công.")
+        data["page_id"] = page_id
+
+    channel = _monitor.add_channel(data)
+    return {"channel": channel}
+
+
+@app.patch("/api/channels/{channel_id}")
+async def api_update_channel(channel_id: str, req: ChannelUpdateRequest):
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    channel = _monitor.update_channel(channel_id, updates)
+    if not channel:
+        raise HTTPException(404, "Kênh không tồn tại")
+    return {"channel": channel}
+
+
+@app.delete("/api/channels/{channel_id}")
+async def api_delete_channel(channel_id: str):
+    ok = _monitor.delete_channel(channel_id)
+    if not ok:
+        raise HTTPException(404, "Kênh không tồn tại")
+    return {"deleted": True}
+
+
+@app.post("/api/channels/{channel_id}/check")
+async def api_check_channel_now(channel_id: str):
+    channels = _monitor.load_channels()
+    ch = next((c for c in channels if c["id"] == channel_id), None)
+    if not ch:
+        raise HTTPException(404, "Kênh không tồn tại")
+    return await asyncio.to_thread(_monitor.check_channel, ch)
+
+
+@app.post("/api/channels/check-all")
+async def api_check_all_channels_now():
+    """Kiểm tra video mới trên tất cả các kênh đang theo dõi."""
+    channels = _monitor.load_channels()
+    total_new = 0
+    all_new_vids = []
+    results = []
+    for ch in channels:
+        if ch.get("active", True):
+            try:
+                result = await asyncio.to_thread(_monitor.check_channel, ch)
+                results.append(result)
+                total_new += result["new_videos_found"]
+                all_new_vids.extend(result["videos"])
+            except MonitorError as error:
+                results.append({"channel_id": ch["id"], "status": "busy" if error.status_code == 409 else "error",
+                                "code": error.code, "message": str(error), "complete": False,
+                                "new_videos_found": 0, "videos": []})
+    return {"new_videos_found": total_new, "videos": all_new_vids, "results": results,
+            "complete": all(result["complete"] for result in results)}
+
+
+# ── Channel videos & Pending ──────────────────────────────────
+
+class ChannelVideosDeleteRequest(BaseModel):
+    video_uuids: List[str]
+
+
+def _delete_monitor_rows(video_uuids):
+    tasks = downloader.get_all_tasks().copy()
+    active = {video_id for video_id, task in tasks.items()
+              if task.get("status") in ("downloading", "pending", "queued")}
+    result = _monitor.delete_channel_videos(video_uuids, active)
+    if result["removed_count"]:
+        _monitor._notify([])
+    return result
+
+
+@app.post("/api/channels/videos/delete-batch")
+async def api_delete_channel_videos(req: ChannelVideosDeleteRequest):
+    if not req.video_uuids or len(req.video_uuids) > 5000 or any(not item.strip() for item in req.video_uuids):
+        raise HTTPException(422, "Chọn từ 1 đến 5000 mục để xóa khỏi bảng cập nhật.")
+    return await asyncio.to_thread(_delete_monitor_rows, req.video_uuids)
+
+
+@app.delete("/api/channels/videos/{video_uuid}")
+async def api_delete_channel_video(video_uuid: str):
+    result = await asyncio.to_thread(_delete_monitor_rows, [video_uuid])
+    if result["skipped_ids"]:
+        raise HTTPException(409, "Video đang tải; hãy đợi tải xong rồi xóa khỏi bảng.")
+    if not result["removed_count"]:
+        raise HTTPException(404, "Mục này không còn trong bảng cập nhật.")
+    return result
+
+
+@app.get("/api/channels/videos")
+async def api_get_channel_videos(channel_id: Optional[str] = None, status: Optional[str] = None):
+    """Lấy danh sách video của 1 kênh hoặc tất cả kênh, hỗ trợ lọc theo trạng thái."""
+    vids = _monitor.get_channel_videos(channel_uuid=channel_id, status=status)
+    return {"videos": vids}
+
+
+@app.patch("/api/channels/videos/{video_uuid}")
+async def api_update_channel_video(video_uuid: str, req: Dict[str, Any]):
+    """Cập nhật collection hoặc trạng thái của video kênh."""
+    new_col = req.get("collection")
+    if new_col:
+        ok = _monitor.update_video_collection(video_uuid, new_col)
+        if not ok:
+            raise HTTPException(404, "Không tìm thấy video")
+    return {"updated": True}
+
+
+@app.get("/api/channels/pending")
+async def api_get_pending():
+    return {"pending": _monitor.get_pending_videos()}
+
+
+@app.delete("/api/channels/pending/{video_uuid}")
+async def api_dismiss_pending(video_uuid: str):
+    # Compatibility for old clients using the X button.
+    result = await api_delete_channel_video(video_uuid)
+    return {"dismissed": True, **result}
+
+
+# ── SSE: real-time push khi có video mới ─────────────────────
+
+@app.get("/api/channels/events")
+async def api_channel_events(request: Request):
+    from queue import Queue, Empty
+    q: Queue = Queue(maxsize=100)
+    _sse_queues.append(q)
+
+    async def event_generator():
+        try:
+            yield "data: {\"type\":\"connected\"}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg = q.get_nowait()
+                    yield f"data: {msg}\n\n"
+                except Empty:
+                    await asyncio.sleep(1)
+        finally:
+            if q in _sse_queues:
+                _sse_queues.remove(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Facebook config & posting ────────────────────────────────
+
+@app.get("/api/fb/config")
+async def api_fb_get_config():
+    cfg = _monitor.load_fb_config()
+    token = cfg.get("page_access_token", "")
+    return {
+        "page_id":    cfg.get("page_id", ""),
+        "page_name":  cfg.get("page_name", ""),
+        "token_set":  bool(token),
+        "token_hint": "••••••••" if token else "",
+    }
+
+
+@app.post("/api/fb/config")
+async def api_fb_save_config(req: FbConfigRequest):
+    _monitor.save_fb_config({
+        "page_id": req.page_id,
+        "page_access_token": req.page_access_token,
+        "page_name": req.page_name,
+    })
+    return {"saved": True}
+
+
+@app.post("/api/fb/test")
+async def api_fb_test():
+    result = await asyncio.to_thread(_fb_poster.test_fb_connection)
+    return {"ok": True, **result}
+
+
+@app.post("/api/fb/post")
+async def api_fb_post(req: FbPostRequest):
+    safe_path = _resolve_safe_path(req.mp4_path)
+    if not os.path.exists(safe_path):
+        raise HTTPException(404, f"File không tồn tại: {req.mp4_path}")
+    return await asyncio.to_thread(_fb_poster.post_video_to_facebook, safe_path, req.caption)
 
 
 # Multi-Page publishing keeps the legacy single-Page endpoints available.
