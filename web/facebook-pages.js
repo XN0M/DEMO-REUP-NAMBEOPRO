@@ -3,8 +3,8 @@
   const el=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
   const button=(text,fn)=>{const b=el('button',text);b.className='nb-button';b.type='button';b.onclick=fn;return b;};
   let pages=[], busy=false, selectedFile='', panel, rows, id, name, token, selector, message, saveButton;
-  async function api(path='',method='GET',body){
-    const response=await fetch('/api/fb/pages'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+  async function api(path='',method='GET',body,signal){
+    const response=await fetch('/api/fb/pages'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal});
     const data=await response.json();
     if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Không thực hiện được thao tác Facebook.');
     return data;
@@ -19,9 +19,24 @@
       const row=el('div');row.style.cssText='display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0';
       const label=el('strong',`${page.page_name||'Page chưa đặt tên'} · ${page.page_id}`);row.append(label);
       row.append(button('Sửa',()=>{id.value=page.page_id;id.readOnly=true;name.value=page.page_name;token.value='';token.placeholder='Để trống để giữ token đã lưu';name.focus();}));
-      const test=button('Kiểm tra kết nối',async()=>{test.disabled=true;try{const data=await api('/'+encodeURIComponent(page.page_id)+'/test','POST');message.textContent=`Đã kết nối: ${data.page_name} · ${data.page_id}. Chưa kiểm tra quyền đăng video.`;}catch(e){report(e);}finally{test.disabled=false;}});
+      const result=el('p');result.dataset.pageCheck=page.page_id;result.setAttribute('role','status');result.setAttribute('aria-live','polite');
+      result.style.cssText='flex-basis:100%;margin:0;white-space:normal';
+      const test=button('Kiểm tra kết nối',async()=>{
+        const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),20000);
+        test.disabled=true;test.textContent='Đang kiểm tra…';test.setAttribute('aria-busy','true');
+        result.style.color='#93c5fd';result.textContent='Đang kết nối Facebook để kiểm tra Page…';
+        try{
+          const data=await api('/'+encodeURIComponent(page.page_id)+'/test','POST',undefined,controller.signal);
+          if(data.ok!==true||data.page_id!==page.page_id)throw Error('Máy chủ chưa xác nhận đúng Page. Hãy thử lại.');
+          result.style.color='#86efac';result.textContent=`Đã kết nối: ${data.page_name} · ${data.page_id}. Chưa kiểm tra quyền đăng video.`;
+          showToast(`Kết nối thành công: ${data.page_name} · ${data.page_id}`);
+        }catch(e){
+          const detail=e.name==='AbortError'?'Quá 20 giây chưa nhận được kết quả. Kiểm tra mạng và thử lại.':e instanceof TypeError?'Không kết nối được máy chủ Nambeo. Hãy tải lại trang và thử lại.':e.message;
+          result.style.color='#fca5a5';result.textContent='Kiểm tra thất bại: '+detail;showToast(result.textContent,true);
+        }finally{clearTimeout(timer);test.disabled=false;test.textContent='Kiểm tra kết nối';test.removeAttribute('aria-busy');}
+      });
       row.append(test,button('Xóa khỏi tool',async()=>{if(!confirm(`Xóa kết nối ${page.page_name||page.page_id} khỏi tool? Bài trên Facebook vẫn được giữ.`))return;try{await api('/'+encodeURIComponent(page.page_id),'DELETE');if(id.value===page.page_id)clear();await refresh();}catch(e){report(e);}}));
-      rows.append(row);
+      row.append(result);rows.append(row);
     }
   }
   function field(label,input){const wrap=el('label',label);wrap.style.cssText='display:block;margin:12px 0';input.style.cssText='display:block;width:100%;padding:9px;margin-top:5px;background:#101317;border:1px solid #3b4452;border-radius:7px;color:#eee';wrap.append(input);return wrap;}

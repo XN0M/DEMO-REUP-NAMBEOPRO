@@ -2,6 +2,7 @@
 import json
 import socket
 import threading
+import time
 from urllib.parse import urlsplit
 
 import uvicorn
@@ -14,7 +15,7 @@ def main():
     base = 'http://127.0.0.1:' + str(sock.getsockname()[1])
     service = uvicorn.Server(uvicorn.Config(app, lifespan='off', log_level='error'))
     thread = threading.Thread(target=lambda: service.run(sockets=[sock]), daemon=True); thread.start()
-    state = {'pages': [], 'posts': []}
+    state = {'pages': [], 'posts': [], 'check_error': False}
     def route_api(route):
         req = route.request; path = urlsplit(req.url).path
         body = req.post_data_json if req.post_data else {}
@@ -33,7 +34,12 @@ def main():
             elif path.endswith('/post'):
                 state['posts'].append((identity, body))
                 result = {'success': True, 'page_id': identity, 'video_id': 'test-video'}
-            else: result = {'ok': True, 'page_id': identity, 'page_name': 'Checked'}
+            else:
+                time.sleep(.3)
+                if state['check_error']:
+                    route.fulfill(status=403, content_type='application/json', body=json.dumps({'detail': 'Token test invalid'}))
+                    return
+                result = {'ok': True, 'page_id': identity, 'page_name': 'Checked'}
         elif path == '/api/channels': result = {'channels': []}
         elif path == '/api/channels/videos': result = {'videos': []}
         elif path == '/api/history': result = {'videos': []}
@@ -56,6 +62,16 @@ def main():
                 page.get_by_role('button', name='Lưu Page', exact=True).click()
                 page.wait_for_function("id => document.querySelector('#facebookPagesPanel').textContent.includes(id)", arg=identity)
             assert page.locator('#fbMultiPageToken').input_value() == ''
+            check = page.get_by_role('button', name='Kiểm tra kết nối', exact=True).first
+            check.click()
+            page.wait_for_function("document.querySelector('[data-page-check=\"101\"]').textContent.includes('Đã kết nối')")
+            assert check.is_enabled()
+            assert 'Kết nối thành công' in page.locator('#toast').inner_text()
+            state['check_error'] = True
+            check.click()
+            page.wait_for_function("document.querySelector('[data-page-check=\"101\"]').textContent.includes('Token test invalid')")
+            assert check.is_enabled()
+            assert 'Kiểm tra thất bại' in page.locator('#toast').inner_text()
             page.evaluate("openFbPostModal('sample.mp4', 'Caption')")
             page.locator('#fbPostModal').wait_for(state='visible')
             page.locator('#btnSubmitFbPost').click()
@@ -73,7 +89,7 @@ def main():
             page.screenshot(path='facebook-pages-ui-test.png', full_page=True)
             assert not errors, errors
             browser.close()
-        print('PASS: add two Pages, require selection, post to B, reload, delete, no script errors')
+        print('PASS: add Pages, visible connection success/failure, correct destination, reload/delete, no script errors')
     finally:
         service.should_exit = True; thread.join(5)
 
