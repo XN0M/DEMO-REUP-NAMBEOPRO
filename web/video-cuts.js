@@ -244,3 +244,39 @@ async function openCutOutputFolder() {
   if(!cutOutputFolder)return;
   try{const response=await fetch('/api/open-folder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder_path:cutOutputFolder})});if(!response.ok)throw Error('Không mở được thư mục');}catch(error){showToast(error.message,true);}
 }
+
+
+let activeCutDialog = null;
+window.openVideoCuts = function(filepath, options = {}) {
+  activeCutDialog?.();
+  const content=cutEl('stepContent5'), placeholder=document.createComment('video-cuts-home');
+  const wasHidden=content.classList.contains('hidden'), previousPath=currentTranscriptRelPath;
+  const opener=document.activeElement, previousOverflow=document.body.style.overflow;
+  const studio=document.querySelector('.ns'), previousInert=studio?.inert;
+  const dialog=document.createElement('div');dialog.className='fixed inset-0 cutEditorDialog';
+  dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
+  dialog.setAttribute('aria-labelledby','cutEditorTitle');
+  const header=document.createElement('header'),identity=document.createElement('div');
+  const title=document.createElement('h2');title.id='cutEditorTitle';title.textContent='Cắt / chia nhiều đoạn';
+  const name=document.createElement('p');name.textContent=filepath;
+  const close=document.createElement('button');close.type='button';close.textContent=studio?'Đóng · Quay lại Studio':'Đóng công cụ cắt';
+  const finish=()=>{
+    if(activeCutDialog!==finish)return;
+    resetCutsForSource('');currentTranscriptRelPath=previousPath;
+    content.classList.toggle('hidden',wasHidden);placeholder.replaceWith(content);
+    dialog.remove();document.body.style.overflow=previousOverflow;
+    if(studio?.isConnected)studio.inert=previousInert;
+    activeCutDialog=null;opener?.isConnected&&opener.focus({preventScroll:true});
+  };
+  activeCutDialog=finish;close.onclick=finish;
+  identity.append(title,name);header.append(identity,close);dialog.append(header);
+  content.before(placeholder);content.classList.remove('hidden');dialog.append(content);
+  document.body.append(dialog);document.body.style.overflow='hidden';
+  if(studio)studio.inert=true;
+  currentTranscriptRelPath=filepath;resetCutsForSource(filepath);
+  const session=cutSession;
+  if(Number.isFinite(options.time))cutEl('cutSourcePlayer').addEventListener('loadedmetadata',()=>{
+    if(session===cutSession)cutEl('cutSourcePlayer').currentTime=Math.max(0,Math.min(options.time,cutEl('cutSourcePlayer').duration));
+  },{once:true});
+  initCropEditor();queueMicrotask(()=>{if(dialog.isConnected)close.focus();});
+};

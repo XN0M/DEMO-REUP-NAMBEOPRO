@@ -374,3 +374,86 @@ body>div.fixed.inset-0{overflow:auto;backdrop-filter:blur(10px);-webkit-backdrop
 .nb-subfilter-btn{background:transparent;border:1px solid transparent;color:#94a3b8;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:500;transition:all .15s ease}
 .nb-subfilter-btn:hover{color:#f1f5f9;background:rgba(255,255,255,0.06)}
 .nb-subfilter-btn.active{background:linear-gradient(135deg,rgba(124,58,237,0.25) 0%,rgba(6,182,212,0.12) 100%);color:#ffffff;border-color:rgba(139,92,246,0.45);font-weight:600;box-shadow:0 0 10px rgba(124,58,237,0.16)}
+
+/* Keep preview geometry independent of the timeline and the properties column. */
+.ns .playerPanel{flex:0 0 auto}
+.ns .previewMedia{align-items:stretch;justify-content:flex-start;flex:1 1 0;min-height:0}
+.ns .previewTop{flex:none;flex-wrap:wrap;margin:0 0 6px}
+.ns .previewViewport{container-type:size;flex:1 1 0;min-height:0;min-width:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.ns .previewViewport .stage{flex:none;min-height:0;max-height:none;max-width:100%;width:min(100cqw,calc(100cqh * var(--stage-ratio,1.7778)));height:auto;aspect-ratio:var(--stage-ratio,1.7778);margin:auto}
+.ns .previewTools{flex:none}
+.ns .previewTools canvas{height:68px;min-width:0}
+.ns .previewTools .timelineHint{font-size:11px;padding:2px 8px}
+.ns .previewTools>.muted{margin:3px 0;font-size:11px;line-height:1.3}
+.ns .trialSkip{display:none}
+.ns[data-step=export] .trialSkip{display:flex;align-items:center;gap:6px;font-size:11px;margin-top:4px}
+.ns .playerPanel>summary{min-height:24px;line-height:24px;font-size:12px}
+.ns .studioDividerActions{flex-wrap:wrap}
+.ns .studioDivider{gap:6px}
+.ns .studioDividerActions button{min-height:28px}
+.ns .mobilePropertyButton{display:none}
+.ns .studioIdentity{min-width:0}
+.ns .studioContext{margin:0;font-size:11px}
+.ns .studioControls{flex-wrap:wrap;justify-content:flex-end}
+.ns .studioCut{white-space:nowrap}
+@media(min-width:768px) and (max-width:1200px){
+  .ns .layout{grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:10px}
+  .ns header{padding:8px 12px;flex-wrap:wrap}
+  .ns header>.studioIdentity{max-width:100%}
+  .ns .previewTop>.toolbar{gap:4px}
+}
+@media(max-width:767px){
+  .ns{overflow-y:auto}
+  .ns header{position:relative;padding:8px 10px;flex-wrap:wrap;gap:6px}
+  .ns header>.studioIdentity{width:100%;max-width:none}
+  .ns .studioContext,.ns .studioEyebrow{display:none}
+  .ns .studioControls{width:100%;justify-content:flex-start;gap:4px}
+  .ns .studioControls button{padding:5px 7px;font-size:11px}
+  .ns .studioControls [data-save-status]{font-size:10px}
+  .ns .desktopPropertyButton{display:none}
+  .ns .mobilePropertyButton{display:inline-block}
+  .ns .workflowTabs{gap:4px;padding:5px 8px}
+  .ns .workflowTabs button{padding:5px 3px;font-size:11px}
+  .ns .stepActions{padding:5px 8px;gap:4px;max-height:84px;overflow:auto}
+  .ns .stepActions button{font-size:11px;padding:5px 7px}
+  .ns .layout{display:block;flex:none;overflow:visible;gap:0;padding:6px;transition:none}
+  .ns .studioEditor{height:auto;overflow:visible}
+  .ns .playerPanel{padding:5px 8px 3px}
+  .ns .playerPanel>summary{min-height:24px!important}
+  .ns .previewTop .studioCut{display:none}
+  .ns .previewTop button{min-height:30px!important}
+  .ns .studioEditor>.cueHeading{display:flex}
+  .ns .cueViewport .list{display:block}
+  .ns .studioEditor>.cueSelection:not(.hidden){display:flex}
+  .ns .previewTop{gap:4px}
+  .ns .previewTop button{font-size:10px;padding:4px 6px}
+  .ns .previewTop [data-time]{font-size:10px}
+  .ns .previewTools canvas{height:60px}
+  .ns .previewTools>.muted{display:none}
+  .ns .studioDivider{padding:4px 6px}
+  .ns .studioDividerActions{gap:4px}
+  .ns .studioDividerActions button{font-size:10px;padding:3px 5px}
+  .ns .presetBalance,.ns .presetCues{display:none}
+  .ns .cueHeading{flex-wrap:wrap;padding:5px 8px;gap:4px}
+  .ns .cueHeading input[type=search]{width:125px;min-width:0}
+  .ns .cueViewport{flex:none;height:340px;padding:6px 8px 16px;min-height:60px}
+  .ns .properties{display:none;position:fixed;z-index:6;right:6px;top:var(--studio-header-height,130px);bottom:6px;height:auto;width:min(340px,calc(100% - 12px));box-shadow:0 8px 40px #000}
+  .ns.showMobileProperties .properties{display:block!important}
+}
+
+/* The cutter opens above Studio and returns to the same editing session. */
+.cutEditorDialog{position:fixed;inset:0;z-index:120;display:flex;flex-direction:column;background:#080d18;color:#e2e8f0;overflow:hidden}
+.cutEditorDialog>header{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid #334155;background:#101726}
+.cutEditorDialog h2{margin:0;font-size:16px;font-weight:600}
+.cutEditorDialog header p{margin:4px 0 0;color:#94a3b8;font-size:12px;overflow-wrap:anywhere}
+.cutEditorDialog header button{flex:none;padding:8px 12px;border:1px solid #475569;border-radius:8px;background:#1e293b}
+.cutEditorDialog #stepContent5{max-width:1600px;min-height:0;padding:16px 24px;overflow:auto}
+.cutEditorDialog #stepContent5>.grid{grid-template-columns:minmax(0,1.4fr) minmax(240px,.6fr);align-items:start}
+.cutEditorDialog #cutSourcePlayer{max-height:48vh!important;object-fit:contain}
+@media(max-width:767px){
+  .cutEditorDialog>header{padding:10px;align-items:flex-start}
+  .cutEditorDialog h2{font-size:14px}
+  .cutEditorDialog header button{padding:6px;font-size:11px}
+  .cutEditorDialog #stepContent5{padding:10px}
+  .cutEditorDialog #stepContent5>.grid{grid-template-columns:minmax(0,1fr)}
+}

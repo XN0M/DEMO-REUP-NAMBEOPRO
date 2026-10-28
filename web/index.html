@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/studio.css?v=20261027-studio-neo" />
-  <script defer src="/static/studio.js?v=20261027-studio-neo"></script>
+  <link rel="stylesheet" href="/static/studio.css?v=20261028-preview" />
+  <script defer src="/static/studio.js?v=20261028-preview"></script>
   <title>Nambeo · Video Studio</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261027-studio-neo" />
+  <link rel="stylesheet" href="/static/app.css?v=20261028-preview" />
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
@@ -3642,7 +3642,7 @@
           if (handler.startsWith('openHistoryFile')) button.textContent = 'Mở trên máy';
           if (handler.startsWith('confirmRestoreOriginal')) button.textContent = 'Khôi phục gốc';
           if (handler.startsWith('confirmDeleteVideo')) { button.textContent = 'Xóa video'; button.dataset.danger = ''; }
-          if (handler.startsWith('openStudioModal')) { button.textContent = 'Cắt và chia nhiều đoạn'; button.title = 'Đặt nhiều mốc và xuất từng đoạn'; button.removeAttribute('onclick'); button.onclick=()=>openLegacyTranscriptModal(encodeURIComponent(v.rel_path), 5); }
+          if (handler.startsWith('openStudioModal')) { button.textContent = 'Cắt và chia nhiều đoạn'; button.title = 'Đặt nhiều mốc và xuất từng đoạn'; button.removeAttribute('onclick'); button.onclick=()=>window.openVideoCuts(v.rel_path); }
           if (handler.startsWith('openTranscriptModal')) { button.textContent='Xuất nâng cao (công cụ cũ)'; button.removeAttribute('onclick'); button.onclick=()=>openLegacyTranscriptModal(encodeURIComponent(v.rel_path)); }
           if (handler.startsWith('openFbPostModal')) button.textContent = 'Đăng lên Facebook';
           items.append(button);
@@ -6297,7 +6297,7 @@
   </script>
   <link rel="stylesheet" href="/static/voices.css?v=2">
   <script src="/static/voices.js?v=2"></script>
-  <script src="/static/video-cuts.js?v=20261028-1"></script>
+  <script src="/static/video-cuts.js?v=20261028-2"></script>
   <script src="/static/app.js?v=20261027-neo-tech"></script>
   <script src="/static/youtube.js?v=20261025-2"></script>
   <script src="/static/facebook-pages.js?v=20261027-1"></script>
