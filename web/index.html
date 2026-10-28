@@ -1829,7 +1829,7 @@
               <span>Chỉnh sửa Video — Crop khung hình &amp; Trim thời gian</span>
             </div>
             <p class="text-[11px] text-slate-400 leading-relaxed">
-              Cắt vùng khung hình muốn giữ lại bằng cách kéo thả trên ảnh preview, hoặc chọn đoạn thời gian cần giữ. Video sau khi xử lý sẽ thay thế video gốc (có sao lưu tự động).
+              Đặt A, B và các mốc ở giữa để xuất từng đoạn thành file riêng trong thư mục con cạnh video gốc. Có thể áp dụng cùng một vùng crop cho tất cả các đoạn.
             </p>
           </div>
 
@@ -1866,44 +1866,25 @@
                 </div>
               </div>
 
-              <!-- Trim Toggle -->
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <i data-lucide="timer" class="w-4 h-4 text-indigo-400"></i>
-                    <span class="text-xs font-semibold text-white">Trim thời gian</span>
+                <label class="text-xs text-white"><input type="checkbox" id="trimToggle" checked onchange="onTrimToggle()"> Cắt thời gian / chia nhiều đoạn</label>
+                <div id="trimControls" class="space-y-3">
+                  <video id="cutSourcePlayer" controls preload="metadata" class="w-full rounded-lg bg-black" style="max-height:240px"></video>
+                  <p class="text-xs text-slate-400">Bấm thanh để tua · Kéo mốc hoặc chọn rồi dùng ← → · Thời gian tính theo video gốc</p>
+                  <div id="trimTimelineTrack" style="position:relative;height:32px;background:#0f172a;border:1px solid #64748b;border-radius:6px;touch-action:none" aria-label="Thanh mốc cắt video"></div>
+                  <div id="cutMarkerLabels" style="position:relative;min-height:28px"></div>
+                  <div class="flex flex-wrap gap-2 text-xs">
+                    <button onclick="addCutMarker()" class="px-2 py-2 bg-indigo-600 rounded">Thêm mốc tại đầu phát</button>
+                    <button onclick="deleteCutMarker()" class="px-2 py-2 bg-slate-700 rounded">Xóa mốc đã chọn</button>
+                    <button onclick="resetCutMarkers()" class="px-2 py-2 bg-slate-700 rounded">Đặt lại</button>
                   </div>
-                  <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="trimToggle" onchange="onTrimToggle()" class="sr-only peer">
-                    <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                  </label>
-                </div>
-                <div id="trimControls" class="hidden space-y-3">
-                  <!-- Timeline dual-range -->
-                  <div class="space-y-2">
-                    <div id="trimTimelineTrack" class="relative h-8 bg-slate-950 rounded-lg border border-slate-700 cursor-pointer select-none overflow-hidden">
-                      <div id="trimRangeHighlight" class="absolute top-0 bottom-0 bg-indigo-600/30 border-x border-indigo-500 pointer-events-none" style="left:0%;width:100%"></div>
-                      <div id="trimHandleStart" class="absolute top-0 bottom-0 w-3 bg-indigo-500 rounded-sm cursor-ew-resize flex items-center justify-center" style="left:0%">
-                        <span class="text-white text-[8px] leading-none">◀</span>
-                      </div>
-                      <div id="trimHandleEnd" class="absolute top-0 bottom-0 w-3 bg-indigo-500 rounded-sm cursor-ew-resize flex items-center justify-center" style="right:0%;transform:translateX(0)">
-                        <span class="text-white text-[8px] leading-none">▶</span>
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-between gap-2 text-[11px]">
-                      <div class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 flex items-center gap-1.5">
-                        <span class="text-slate-400">Từ:</span>
-                        <input type="number" id="trimStartInput" min="0" step="0.5" value="0" onchange="onTrimInputChange()" class="bg-transparent text-indigo-300 font-mono w-full outline-none">
-                        <span class="text-slate-500">s</span>
-                      </div>
-                      <div class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 flex items-center gap-1.5">
-                        <span class="text-slate-400">Đến:</span>
-                        <input type="number" id="trimEndInput" min="0" step="0.5" value="0" onchange="onTrimInputChange()" class="bg-transparent text-indigo-300 font-mono w-full outline-none">
-                        <span class="text-slate-500">s</span>
-                      </div>
-                    </div>
-                    <p id="trimDurationLabel" class="text-[11px] text-slate-500">Thời lượng giữ lại: <span class="text-indigo-300 font-mono font-semibold">—</span></p>
+                  <div class="flex flex-wrap gap-2 text-xs">
+                    <label>A (giây) <input id="cutStartInput" type="number" min="0" step="0.001" onchange="onTrimInputChange()" class="w-24 bg-slate-950 p-1"></label>
+                    <label>B (giây) <input id="cutEndInput" type="number" min="0" step="0.001" onchange="onTrimInputChange()" class="w-24 bg-slate-950 p-1"></label>
+                    <label>Mốc chọn (giây) <input id="cutSelectedInput" type="number" min="0" step="0.001" onchange="editSelectedCut(this.value)" class="w-24 bg-slate-950 p-1"></label>
                   </div>
+                  <p id="trimDurationLabel" class="text-xs text-slate-400"></p>
+                  <div id="cutSegmentsList" class="space-y-2 text-xs"></div>
                 </div>
               </div>
 
@@ -1911,10 +1892,10 @@
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
                 <span class="text-xs font-semibold text-slate-300">Chế độ xuất</span>
                 <label class="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" id="losslessTrimCheck" checked class="mt-0.5 accent-teal-500">
+                  <input type="checkbox" id="losslessTrimCheck" class="mt-0.5 accent-teal-500">
                   <div>
-                    <span class="text-[11px] text-white font-medium">Lossless (không mất chất lượng)</span>
-                    <p class="text-[10px] text-slate-400">Nhanh hơn, nhưng điểm cắt có thể lệch ±0.5s tới keyframe gần nhất. Tắt nếu cần cắt chính xác từng frame.</p>
+                    <span class="text-[11px] text-white font-medium">Xuất nhanh (sao chép luồng)</span>
+                    <p class="text-[10px] text-slate-400">Mặc định cắt chính xác bằng mã hóa lại. Bật xuất nhanh có thể lệch mốc theo keyframe; crop luôn cần mã hóa lại.</p>
                   </div>
                 </label>
               </div>
@@ -1948,15 +1929,8 @@
                 <div class="relative aspect-video max-h-44 bg-black rounded-lg overflow-hidden border border-slate-800">
                   <video id="cropTrimPreviewVideo" controls class="w-full h-full object-contain"></video>
                 </div>
-                <div class="flex items-center gap-2">
-                  <button onclick="confirmApplyReplaceOriginal(currentTranscriptRelPath, cropTrimOutputRel)" class="flex-1 py-2 px-3 bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-400 hover:to-emerald-500 text-slate-950 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow">
-                    <i data-lucide="check-check" class="w-3.5 h-3.5"></i>
-                    <span>Áp dụng &amp; Thay thế video gốc</span>
-                  </button>
-                  <button onclick="openDownloadFolder()" class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs transition">
-                    <i data-lucide="folder" class="w-3.5 h-3.5"></i>
-                  </button>
-                </div>
+                <div id="cutOutputList" class="space-y-2 text-xs"></div>
+                <button onclick="openCutOutputFolder()" class="px-3 py-2 bg-slate-700 rounded text-xs">Mở thư mục các đoạn</button>
               </div>
 
             </div>
@@ -1987,7 +1961,7 @@
                 </div>
               </div>
               <p class="text-[10px] text-slate-500">
-                💡 Frame preview được chụp từ vị trí hiện tại của player video. Tua video đến đúng cảnh muốn crop rồi chuyển sang Tab 5 này.
+                💡 Tua video nguồn trong khung cắt thời gian để cập nhật ảnh chọn vùng crop.
               </p>
             </div>
 
@@ -3668,7 +3642,7 @@
           if (handler.startsWith('openHistoryFile')) button.textContent = 'Mở trên máy';
           if (handler.startsWith('confirmRestoreOriginal')) button.textContent = 'Khôi phục gốc';
           if (handler.startsWith('confirmDeleteVideo')) { button.textContent = 'Xóa video'; button.dataset.danger = ''; }
-          if (handler.startsWith('openStudioModal')) button.textContent = 'Cắt và chỉnh video';
+          if (handler.startsWith('openStudioModal')) { button.textContent = 'Cắt và chia nhiều đoạn'; button.title = 'Đặt nhiều mốc và xuất từng đoạn'; button.removeAttribute('onclick'); button.onclick=()=>openLegacyTranscriptModal(encodeURIComponent(v.rel_path), 5); }
           if (handler.startsWith('openTranscriptModal')) { button.textContent='Xuất nâng cao (công cụ cũ)'; button.removeAttribute('onclick'); button.onclick=()=>openLegacyTranscriptModal(encodeURIComponent(v.rel_path)); }
           if (handler.startsWith('openFbPostModal')) button.textContent = 'Đăng lên Facebook';
           items.append(button);
@@ -4317,9 +4291,11 @@
 
     function openTranscriptModal(encodedRelPath) { return window.openSubtitleStudio(decodeURIComponent(encodedRelPath), 'transcript'); }
 
-    async function openLegacyTranscriptModal(encodedRelPath) {
+    async function openLegacyTranscriptModal(encodedRelPath, initialStep = null) {
       const relPath = decodeURIComponent(encodedRelPath);
       currentTranscriptRelPath = relPath;
+      resetCutsForSource(relPath);
+      const sourceSession = cutSession;
 
       const modal = document.getElementById('transcriptModal');
       const titleEl = document.getElementById('transcriptVideoTitle');
@@ -4331,11 +4307,15 @@
       player.src = `/api/history/stream/${encodeURIComponent(relPath)}`;
 
       modal.classList.remove('hidden');
+      if (initialStep) switchTranscriptStep(initialStep);
 
       try {
         const res = await fetch(`/api/transcript/${encodeURIComponent(relPath)}`);
+        if (sourceSession !== cutSession) return;
         if (res.ok) {
-          currentTranscriptData = await res.json();
+          const transcript = await res.json();
+          if (sourceSession !== cutSession) return;
+          currentTranscriptData = transcript;
           renderStep1Existing(currentTranscriptData);
           populateCharacterMapForm(currentTranscriptData.character_map);
           renderDialogueList();
@@ -4354,11 +4334,13 @@
           switchTranscriptStep(1);
         }
       } catch (e) {
+        if (sourceSession !== cutSession) return;
         currentTranscriptData = null;
         renderStep1New();
         switchTranscriptStep(1);
       }
 
+      if (initialStep) switchTranscriptStep(initialStep);
       const tab4Badge = document.getElementById('tab4DubbedBadge');
       if (tab4Badge) {
         tab4Badge.classList.toggle('hidden', !item?.has_dubbed);
@@ -4368,6 +4350,7 @@
     }
 
     function closeTranscriptModal() {
+      resetCutsForSource('');
       const modal = document.getElementById('transcriptModal');
       const player = document.getElementById('tSyncVideoPlayer');
       const vDubPlayer = document.getElementById('dubVideoPlayer');
@@ -6091,7 +6074,6 @@
     // TAB 5 — CROP & TRIM VIDEO EDITOR
     // ================================================================
 
-    let cropTrimOutputRel = null;
     let cropTrimTaskId = null;
     let cropTrimPollTimer = null;
 
@@ -6115,48 +6097,6 @@
 
     // Canvas image reference
     let cropCanvasImg = null;
-
-    function initCropEditor() {
-      // Try to capture frame from any visible video player
-      const videoSources = [
-        document.getElementById('dubVideoPlayer'),
-        document.getElementById('subExportPreviewVideo'),
-        document.getElementById('cropTrimPreviewVideo')
-      ];
-      let srcVideo = null;
-      for (const v of videoSources) {
-        if (v && v.src && v.readyState >= 2) { srcVideo = v; break; }
-      }
-
-      const canvas = document.getElementById('cropCanvas');
-      const placeholder = document.getElementById('cropCanvasPlaceholder');
-      const infoEl = document.getElementById('cropCanvasInfo');
-      if (!canvas) return;
-
-      if (!srcVideo) {
-        // Try to build a temp video from currentTranscriptRelPath
-        if (currentTranscriptRelPath) {
-          const tmp = document.createElement('video');
-          tmp.src = `/api/history/stream/${encodeURIComponent(currentTranscriptRelPath)}`;
-          tmp.crossOrigin = 'anonymous';
-          tmp.muted = true;
-          tmp.currentTime = 1.0;
-          tmp.addEventListener('seeked', () => {
-            _drawFrameToCanvas(canvas, tmp, placeholder, infoEl);
-            trimState.videoDuration = tmp.duration || 0;
-            if (trimState.end === 0) trimState.end = trimState.videoDuration;
-            _updateTrimInputs();
-          }, { once: true });
-          tmp.load();
-        }
-        return;
-      }
-
-      trimState.videoDuration = srcVideo.duration || 0;
-      if (trimState.end === 0) trimState.end = trimState.videoDuration;
-      _updateTrimInputs();
-      _drawFrameToCanvas(canvas, srcVideo, placeholder, infoEl);
-    }
 
     function _drawFrameToCanvas(canvas, video, placeholder, infoEl) {
       try {
@@ -6292,198 +6232,6 @@
       if (whEl) whEl.textContent = '—';
     }
 
-    // ---------- Trim Timeline ----------
-
-    function onTrimToggle() {
-      const chk = document.getElementById('trimToggle');
-      trimState.active = chk.checked;
-      const ctrl = document.getElementById('trimControls');
-      if (ctrl) ctrl.classList.toggle('hidden', !trimState.active);
-    }
-
-    function _updateTrimInputs() {
-      const sIn = document.getElementById('trimStartInput');
-      const eIn = document.getElementById('trimEndInput');
-      if (sIn) sIn.value = trimState.start.toFixed(1);
-      if (eIn) eIn.value = (trimState.end || trimState.videoDuration).toFixed(1);
-      _updateTrimHandles();
-      _updateTrimDurationLabel();
-    }
-
-    function _updateTrimHandles() {
-      const dur = trimState.videoDuration || 1;
-      const startPct = (trimState.start / dur) * 100;
-      const endPct   = (trimState.end / dur) * 100;
-      const hs = document.getElementById('trimHandleStart');
-      const he = document.getElementById('trimHandleEnd');
-      const hl = document.getElementById('trimRangeHighlight');
-      if (hs) hs.style.left = startPct + '%';
-      if (he) he.style.left = endPct + '%';
-      if (hl) { hl.style.left = startPct + '%'; hl.style.width = (endPct - startPct) + '%'; }
-    }
-
-    function _updateTrimDurationLabel() {
-      const el = document.getElementById('trimDurationLabel');
-      if (!el) return;
-      const dur = (trimState.end || trimState.videoDuration) - trimState.start;
-      const mins = Math.floor(dur / 60);
-      const secs = (dur % 60).toFixed(1);
-      el.innerHTML = `Thời lượng giữ lại: <span class="text-indigo-300 font-mono font-semibold">${mins > 0 ? mins + 'm ' : ''}${secs}s</span>`;
-    }
-
-    function onTrimInputChange() {
-      const sIn = document.getElementById('trimStartInput');
-      const eIn = document.getElementById('trimEndInput');
-      const dur = trimState.videoDuration || 9999;
-      trimState.start = Math.max(0, Math.min(parseFloat(sIn?.value || 0), dur - 0.5));
-      trimState.end   = Math.max(trimState.start + 0.5, Math.min(parseFloat(eIn?.value || dur), dur));
-      _updateTrimHandles();
-      _updateTrimDurationLabel();
-    }
-
-    // Trim handle drag (mouse)
-    (() => {
-      let draggingHandle = null;
-      function getTrackRect() {
-        return document.getElementById('trimTimelineTrack')?.getBoundingClientRect();
-      }
-      function getPct(clientX, rect) {
-        return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      }
-      document.addEventListener('mousedown', (e) => {
-        const hs = document.getElementById('trimHandleStart');
-        const he = document.getElementById('trimHandleEnd');
-        if (hs && hs.contains(e.target)) draggingHandle = 'start';
-        else if (he && he.contains(e.target)) draggingHandle = 'end';
-      });
-      document.addEventListener('mousemove', (e) => {
-        if (!draggingHandle) return;
-        const rect = getTrackRect(); if (!rect) return;
-        const pct = getPct(e.clientX, rect);
-        const t = pct * (trimState.videoDuration || 100);
-        if (draggingHandle === 'start') trimState.start = Math.min(t, trimState.end - 0.5);
-        else trimState.end = Math.max(t, trimState.start + 0.5);
-        trimState.start = Math.max(0, trimState.start);
-        trimState.end   = Math.min(trimState.videoDuration || 9999, trimState.end);
-        _updateTrimInputs();
-      });
-      document.addEventListener('mouseup', () => { draggingHandle = null; });
-    })();
-
-    // ---------- Process & Poll ----------
-
-    async function startCropTrimProcess() {
-      const hasCrop = cropState.active && cropState.committed;
-      const hasTrim = trimState.active;
-      if (!hasCrop && !hasTrim) {
-        showToast('Hãy bật ít nhất Crop hoặc Trim và thiết lập thông số', true);
-        return;
-      }
-      if (!currentTranscriptRelPath) {
-        showToast('Không xác định được video nguồn', true);
-        return;
-      }
-
-      // Build crop payload in video pixel coords
-      let cropPayload = null;
-      if (hasCrop && cropCanvasImg) {
-        const canvas = document.getElementById('cropCanvas');
-        const W = canvas.width, H = canvas.height;
-        const x1 = Math.round(Math.min(cropState.startX, cropState.endX) * W);
-        const y1 = Math.round(Math.min(cropState.startY, cropState.endY) * H);
-        const x2 = Math.round(Math.max(cropState.startX, cropState.endX) * W);
-        const y2 = Math.round(Math.max(cropState.startY, cropState.endY) * H);
-        const cw = x2 - x1, ch = y2 - y1;
-        if (cw < 4 || ch < 4) {
-          showToast('Vùng crop quá nhỏ, hãy kéo thả lại', true);
-          return;
-        }
-        cropPayload = { x: x1, y: y1, w: cw, h: ch };
-      }
-
-      let trimPayload = null;
-      if (hasTrim) {
-        trimPayload = { start: trimState.start, end: trimState.end || trimState.videoDuration };
-      }
-
-      const lossless = document.getElementById('losslessTrimCheck')?.checked ?? true;
-
-      // UI — show progress
-      const btn = document.getElementById('btnStartCropTrim');
-      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Đang xử lý...</span>'; refreshIcons(); }
-      document.getElementById('cropTrimProgressBox')?.classList.remove('hidden');
-      document.getElementById('cropTrimResultCard')?.classList.add('hidden');
-
-      try {
-        const res = await fetch('/api/video/crop-trim', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filepath: currentTranscriptRelPath,
-            crop: cropPayload,
-            trim: trimPayload,
-            lossless_trim: lossless
-          })
-        });
-        const d = await res.json();
-        if (!res.ok) { showToast(d.detail || 'Lỗi khi bắt đầu xử lý', true); _resetCropTrimBtn(); return; }
-        cropTrimTaskId = d.task_id;
-        pollCropTrimProgress(cropTrimTaskId);
-      } catch (e) {
-        showToast('Lỗi kết nối server', true);
-        _resetCropTrimBtn();
-      }
-    }
-
-    function pollCropTrimProgress(taskId) {
-      if (cropTrimPollTimer) clearInterval(cropTrimPollTimer);
-      cropTrimPollTimer = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/video/crop-trim/tasks/${taskId}`);
-          if (!res.ok) return;
-          const d = await res.json();
-
-          const pct = d.percent || 0;
-          const bar = document.getElementById('cropTrimProgressBar');
-          const txt = document.getElementById('cropTrimProgressText');
-          const pctEl = document.getElementById('cropTrimProgressPct');
-          if (bar) bar.style.width = pct + '%';
-          if (pctEl) pctEl.textContent = pct + '%';
-          if (txt) txt.textContent = d.progress_text || 'Đang xử lý…';
-          refreshIcons();
-
-          if (d.status === 'completed') {
-            clearInterval(cropTrimPollTimer);
-            cropTrimOutputRel = d.output_video_rel;
-            _onCropTrimComplete(d);
-          } else if (d.status === 'error') {
-            clearInterval(cropTrimPollTimer);
-            showToast('Lỗi xử lý: ' + (d.error || 'không rõ nguyên nhân'), true);
-            _resetCropTrimBtn();
-          }
-        } catch (e) { /* retry next tick */ }
-      }, 1000);
-    }
-
-    function _onCropTrimComplete(d) {
-      _resetCropTrimBtn();
-      document.getElementById('cropTrimProgressBox')?.classList.add('hidden');
-      const card = document.getElementById('cropTrimResultCard');
-      const prevVid = document.getElementById('cropTrimPreviewVideo');
-      if (card) card.classList.remove('hidden');
-      if (prevVid && d.output_video_url) prevVid.src = d.output_video_url;
-      showToast('Xử lý video hoàn tất! Xem preview bên dưới.');
-    }
-
-    function _resetCropTrimBtn() {
-      const btn = document.getElementById('btnStartCropTrim');
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = '<i data-lucide="scissors" class="w-4 h-4"></i><span>Bắt đầu xử lý video</span>';
-        refreshIcons();
-      }
-    }
-
     // Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
       const modal = document.getElementById('previewModal');
@@ -6549,6 +6297,7 @@
   </script>
   <link rel="stylesheet" href="/static/voices.css?v=2">
   <script src="/static/voices.js?v=2"></script>
+  <script src="/static/video-cuts.js?v=20261028-1"></script>
   <script src="/static/app.js?v=20261027-neo-tech"></script>
   <script src="/static/youtube.js?v=20261025-2"></script>
   <script src="/static/facebook-pages.js?v=20261027-1"></script>

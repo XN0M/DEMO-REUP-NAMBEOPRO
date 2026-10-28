@@ -308,7 +308,8 @@ class CropTrimRequest(BaseModel):
     filepath: str                         # relative path trong downloads/
     crop: Optional[Dict] = None           # {x, y, w, h} pixel tuyệt đối
     trim: Optional[Dict] = None           # {start, end} giây
-    lossless_trim: Optional[bool] = True  # True = -c copy, False = re-encode
+    segments: Optional[List[Dict[str, float]]] = None
+    lossless_trim: Optional[bool] = False  # True = stream copy
 
 @app.get("/api/config")
 async def get_config():
@@ -2135,47 +2136,51 @@ async def start_crop_trim(req: CropTrimRequest):
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail="Không tìm thấy video")
 
-    # Validate crop
     crop = None
-    if req.crop:
-        crop = {
-            "x": max(0, int(req.crop.get("x", 0))),
-            "y": max(0, int(req.crop.get("y", 0))),
-            "w": max(1, int(req.crop.get("w", 0))),
-            "h": max(1, int(req.crop.get("h", 0))),
-        }
+    if req.crop is not None:
+        try:
+            crop = {key: int(req.crop[key]) for key in ("x", "y", "w", "h")}
+            if crop["x"] < 0 or crop["y"] < 0 or crop["w"] < 4 or crop["h"] < 4:
+                raise ValueError("Vùng crop không hợp lệ")
+        except (ValueError, TypeError, KeyError, OverflowError):
+            raise HTTPException(status_code=400, detail="Vùng crop không hợp lệ")
 
-    # Validate trim
-    trim = None
-    if req.trim:
-        t_start = float(req.trim.get("start", 0) or 0)
-        t_end = float(req.trim.get("end", 0) or 0)
-        if t_start >= 0 and (t_end > t_start or t_end == 0):
-            trim = {"start": t_start, "end": t_end}
-
-    if not crop and not trim:
-        raise HTTPException(status_code=400, detail="Phải có ít nhất crop hoặc trim hợp lệ")
-
-    base_name = os.path.splitext(full_path)[0]
-    output_path = f"{base_name}.cropped.mp4"
+    from core.video_cuts import validate_segments
+    if req.trim is not None and req.segments is not None:
+        raise HTTPException(status_code=400, detail="Chỉ gửi trim hoặc segments")
+    try:
+        from core.studio_media import probe
+        info = await asyncio.to_thread(probe, full_path)
+        if req.segments is not None:
+            segments = validate_segments(req.segments, info)
+        elif req.trim is not None:
+            segments = validate_segments([{
+                "start": req.trim.get("start", 0),
+                "end": req.trim.get("end") or info["duration"]
+            }], info)
+        elif crop:
+            segments = [{"start": 0, "end": info["duration"]}]
+        else:
+            raise ValueError("Phải chọn crop hoặc khoảng cắt")
+        if crop and (crop["x"] + crop["w"] > info["width"] or
+                     crop["y"] + crop["h"] > info["height"]):
+            raise ValueError("Vùng crop vượt kích thước video")
+    except (ValueError, TypeError, KeyError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     task_id = str(uuid.uuid4())
 
     async def _run():
         try:
-            await editor.execute_crop_trim(
-                task_id=task_id,
-                input_video=full_path,
-                output_video=output_path,
-                crop=crop,
-                trim=trim,
-                lossless_trim=bool(req.lossless_trim)
-            )
+            from core.video_cuts import execute_cuts
+            await execute_cuts(editor, task_id, full_path, segments, crop, bool(req.lossless_trim))
         finally:
             _release_source_job(full_path)
 
     if not _reserve_source_job(full_path):
         raise HTTPException(status_code=409, detail="Video đang được xử lý")
+    editor.tasks[task_id] = {"task_id": task_id, "status": "queued", "percent": 0,
+                             "outputs": [], "error": None}
     asyncio.create_task(_run())
 
     return {"task_id": task_id, "status": "started"}
@@ -2189,11 +2194,34 @@ async def get_crop_trim_task(task_id: str):
         raise HTTPException(status_code=404, detail="Không tìm thấy tác vụ")
 
     result = dict(task)
-    if task.get("output_video") and os.path.exists(task["output_video"]):
-        rel = os.path.relpath(task["output_video"], current_download_dir).replace("\\", "/")
-        result["output_video_rel"] = rel
-        result["output_video_url"] = f"/api/history/stream/{urllib.parse.quote(rel)}"
+    result["outputs"] = []
+    for entry in task.get("outputs", []):
+        rel = os.path.relpath(entry["path"], current_download_dir).replace("\\", "/")
+        result["outputs"].append({**entry, "rel": rel,
+            "url": f"/api/history/stream/{urllib.parse.quote(rel)}",
+            "download_url": f"/api/video/crop-trim/tasks/{task_id}/files/{entry['index']}"})
+    if result["outputs"]:
+        first = result["outputs"][0]
+        result.update(output_video=first["path"], output_video_rel=first["rel"], output_video_url=first["url"])
+
     return result
+
+@app.get("/api/video/crop-trim/tasks/{task_id}/files/{index}")
+async def download_cut(task_id: str, index: int):
+    task = editor.tasks.get(task_id, {})
+    entry = next((item for item in task.get("outputs", []) if item["index"] == index), None)
+    if not entry or not os.path.isfile(entry["path"]):
+        raise HTTPException(status_code=404, detail="Không tìm thấy đoạn đã xuất")
+    return FileResponse(entry["path"], filename=os.path.basename(entry["path"]), media_type="video/mp4")
+
+@app.get("/api/video/crop-trim/media")
+async def cut_media_info(filepath: str):
+    from core.studio_media import probe
+    try:
+        return await asyncio.to_thread(probe, _resolve_safe_path(filepath))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
 
 from core.studio_api import attach as attach_studio
 studio_service = attach_studio(sys.modules[__name__])

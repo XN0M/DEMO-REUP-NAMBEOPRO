@@ -363,8 +363,7 @@ class VideoEditor:
         # Trim bằng input seeking (trước -i) — nhanh và chính xác hơn output seeking
         if has_trim:
             cmd += ["-ss", str(t_start)]
-            if t_end < total_dur:
-                cmd += ["-to", str(t_end)]
+            cmd += ["-t", str(t_end - t_start)]
 
         cmd += ["-i", input_video]
 
@@ -396,7 +395,7 @@ class VideoEditor:
                 "-b:a", "192k",
             ]
 
-        cmd.append(output_video)
+        cmd += ["-movflags", "+faststart", "-f", "mp4", output_video]
 
         # Run FFmpeg with progress parsing
         process = subprocess.Popen(
@@ -408,25 +407,31 @@ class VideoEditor:
             errors="ignore"
         )
 
-        time_pattern = re.compile(r"time=(\d+):(\d+):(\d+\.\d+)")
-        buf = ""
-        while True:
-            chunk = process.stderr.read(256)
-            if not chunk and process.poll() is not None:
-                break
-            buf += chunk
-            matches = list(time_pattern.finditer(buf))
-            if matches and target_dur > 0 and progress_callback:
-                h, m, s = float(matches[-1].group(1)), float(matches[-1].group(2)), float(matches[-1].group(3))
-                curr_sec = h * 3600 + m * 60 + s
-                pct = min(95.0, 10.0 + (curr_sec / target_dur) * 85.0)
-                progress_callback(round(pct, 1), f"Đang xử lý ({int(pct)}%)...")
-                buf = buf[-500:]
+        try:
+            time_pattern = re.compile(r"time=(\d+):(\d+):(\d+\.\d+)")
+            buf = ""
+            while True:
+                chunk = process.stderr.read(256)
+                if not chunk and process.poll() is not None:
+                    break
+                buf += chunk
+                matches = list(time_pattern.finditer(buf))
+                if matches and target_dur > 0 and progress_callback:
+                    h, m, s = float(matches[-1].group(1)), float(matches[-1].group(2)), float(matches[-1].group(3))
+                    curr_sec = h * 3600 + m * 60 + s
+                    pct = min(95.0, 10.0 + (curr_sec / target_dur) * 85.0)
+                    progress_callback(round(pct, 1), f"Đang xử lý ({int(pct)}%)...")
+                    buf = buf[-500:]
 
-        process.wait()
-        if process.returncode != 0:
-            stderr_tail = buf[-800:] if buf else "(no stderr)"
-            raise RuntimeError(f"FFmpeg lỗi (code {process.returncode}): {stderr_tail}")
+            process.wait()
+            if process.returncode != 0:
+                stderr_tail = buf[-800:] if buf else "(no stderr)"
+                raise RuntimeError(f"FFmpeg lỗi (code {process.returncode}): {stderr_tail}")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            process.stderr.close()
 
         if progress_callback:
             progress_callback(100.0, "Hoàn tất xử lý video!")
