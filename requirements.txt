@@ -12,3 +12,6 @@ openai>=1.14.0
 yt-dlp>=2024.3.10
 
 numpy>=1.26.0
+
+# Raster logo validation and shared watermark rendering
+Pillow>=11.0,<13

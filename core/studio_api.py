@@ -63,6 +63,9 @@ def attach(host, database=None):
         except (ValueError, KeyError, TypeError) as error:
             raise HTTPException(400, str(error)) from error
 
+    from . import branding_api
+    branding_api.attach(router, service, call)
+
     from .studio_cleanup import StudioCleanup
     cleanup = StudioCleanup(service)
 

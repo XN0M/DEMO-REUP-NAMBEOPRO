@@ -13,6 +13,7 @@ import tempfile
 import threading
 import uuid
 from pathlib import Path
+from . import branding
 
 LOCK = threading.RLock()
 VOICE = {'provider': 'edge', 'model': 'edge', 'voice': 'vi-VN-HoaiMyNeural'}
@@ -24,7 +25,7 @@ STYLE = dict(font='DejaVu Sans', size=42, bold=True, color='#FFFFFF', outline_co
 DEFAULT = dict(style=STYLE, voice=VOICE, speakers={}, clone_consent=False,
                mix={'voice_volume': 1.0, 'bg_volume': 0.15, 'ducking': True},
                render={'start': 0, 'end': None, 'speed': 1, 'aspect': 'original', 'dubbed': False, 'subtitles': True},
-               reading_speed=20, timing={'max_speed': 1.65, 'max_overlap': .5}, caption_hold=12)
+               reading_speed=20, timing={'max_speed': 1.65, 'max_overlap': .5}, caption_hold=12, branding=branding.DEFAULT)
 
 class Conflict(ValueError):
     pass
@@ -95,6 +96,7 @@ def normalize(data):
                 config[key].update(value if key=='speakers' else {k:v for k,v in value.items() if k in config[key]})
             else:
                 config[key] = value
+    config['branding'] = branding.normalize(config['branding'])
     data['studio_config'] = config
     return data
 
@@ -171,6 +173,7 @@ def validate(data, duration):
             raise ValueError('ID giọng VieNeu không hợp lệ')
     for key in ('voice_volume', 'bg_volume'):
         cfg['mix'][key] = number(cfg['mix'][key], 0, 3, key)
+    cfg['branding'] = branding.validate(cfg['branding'], duration)
     cfg['reading_speed'] = number(cfg['reading_speed'], 1, 100, 'Tốc độ đọc')
     cfg['timing']['max_speed'] = number(cfg['timing']['max_speed'], 1,
         1.25 if cfg['timing'].get('policy') == 'natural-v1' else 1.65, 'Tốc độ giọng tối đa')
