@@ -12,6 +12,15 @@ from pydantic import BaseModel, Field
 from . import studio_store as store, studio_media as media
 from .studio_service import StudioService
 
+class CleanupPlan(BaseModel):
+    filepath: str
+    job_id: str
+    mode: str = 'compact'
+
+class CleanupExecute(BaseModel):
+    plan_id: str
+    confirmed: bool = False
+
 class Save(BaseModel):
     filepath: str
     expected_revision: int = Field(ge=0)
@@ -53,6 +62,39 @@ def attach(host, database=None):
             raise HTTPException(404, str(error)) from error
         except (ValueError, KeyError, TypeError) as error:
             raise HTTPException(400, str(error)) from error
+
+    from .studio_cleanup import StudioCleanup
+    cleanup = StudioCleanup(service)
+
+    @router.post('/cleanup/plan')
+    def cleanup_plan(req: CleanupPlan):
+        return call(cleanup.plan, req.filepath, req.job_id, req.mode)
+
+    @router.post('/cleanup/execute')
+    def cleanup_execute(req: CleanupExecute):
+        return call(cleanup.execute, req.plan_id, req.confirmed)
+
+    @router.get('/recent-jobs')
+    def recent_jobs():
+        service.recover()
+        import json
+        with service.db() as con:
+            rows = con.execute('SELECT data FROM jobs ORDER BY rowid DESC LIMIT 100').fetchall()
+        jobs = []
+        for row in rows:
+            job = json.loads(row[0])
+            if job.get('kind') != 'export':
+                continue
+            if job.get('status') == 'completed':
+                try:
+                    video = service.resolve(job['filepath'])
+                    output = Path(service.check(store.paths(video)[2] / job['artifact']))
+                    if not output.is_file():
+                        continue
+                except (ValueError, OSError, HTTPException):
+                    continue
+            jobs.append(service.public_job(job))
+        return {'jobs': jobs}
 
     @router.get('/project')
     def project(filepath: str):

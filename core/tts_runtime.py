@@ -384,7 +384,7 @@ class VieneuRuntime:
             return self.request('GET', '/voices', timeout=10)['voices']
         return []
 
-    def synthesize(self, text, voice, cancelled=lambda: False, refresh=False):
+    def synthesize(self, text, voice, cancelled=lambda: False, refresh=False, metrics=None):
         text = text.strip()
         if not text or len(text) > 10000:
             raise TTSError('Lời đọc cần từ 1 đến 10000 ký tự')
@@ -413,7 +413,12 @@ class VieneuRuntime:
                     return result
                 if self.gpu_release:
                     self.gpu_release()
+                process = getattr(self, 'process', None)
+                cold = not process or process.poll() is not None
+                loading = time.monotonic()
                 self.start()
+                if metrics is not None:
+                    metrics.update(device=getattr(self, 'device', 'unknown'), cold_start=cold, model_load_seconds=time.monotonic()-loading)
                 reference = None
                 if voice.startswith('vieneu:custom:'):
                     reference = str(library.sample(voice.split(':', 2)[2]))

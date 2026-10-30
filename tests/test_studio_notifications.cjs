@@ -1,0 +1,10 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('web/studio.js','utf8');let jobs=[],notices=[],cards=0,saved='[]';
+const node=()=>({style:{},setAttribute(){},append(){},remove(){}});
+const context={URLSearchParams,Set,JSON,fetch:async()=>({ok:true,json:async()=>({jobs})}),localStorage:{getItem:()=>saved,setItem:(k,v)=>saved=v},terminal:j=>['completed','error','cancelled'].includes(j.status),showToast:(...v)=>notices.push(v),el:node,button:node,document:{querySelectorAll:()=>[],body:{append:()=>cards++}}};
+vm.createContext(context);vm.runInContext(source.slice(source.indexOf('  let watchingJobs='),source.indexOf('  setInterval(watchExports')),context);
+(async()=>{jobs=[{id:'old',kind:'export',status:'completed',artifact:'old.mp4'}];await vm.runInContext('watchExports()',context);assert.equal(cards,0);
+jobs.push({id:'new',kind:'export',status:'completed',artifact:'new.mp4',filepath:'source.mp4'});await vm.runInContext('watchExports()',context);assert.equal(cards,1);assert.equal(notices.length,1);
+await vm.runInContext('watchExports()',context);assert.equal(cards,1);assert.equal(notices.length,1);
+jobs.push({id:'failed',kind:'export',status:'error',message:'failed'});await vm.runInContext('watchExports()',context);assert.equal(notices.length,2);assert.equal(cards,1);
+console.log('Export notifications: background completion, deduplication, history and errors passed');})().catch(e=>{console.error(e);process.exitCode=1;});

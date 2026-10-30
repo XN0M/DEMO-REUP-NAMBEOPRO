@@ -3628,7 +3628,7 @@
         studioButton.previousElementSibling.className = 'nb-card-folder';
         const mediaState = card.querySelector('[data-media-state]');
         if (mediaState) { const summary = v.studio_summary; if (summary) { const status = document.createElement('span'); status.textContent = !summary.segments ? 'Chưa có bản thoại' : summary.missing_translation ? `Còn ${summary.missing_translation} câu chưa dịch` : 'Đã có bản dịch / tiếng Việt'; mediaState.replaceChildren(status); if(summary.voice_stale) { const voice = document.createElement('span'); voice.textContent='Giọng đọc cần cập nhật'; mediaState.append(voice); } } if(mediaState.children.length)studioButton.before(mediaState);else mediaState.remove(); }
-        studioButton.textContent = 'Mở Studio'; studioButton.className = 'nb-button primary full';
+        if(v.filename?.startsWith('finished-')){studioButton.removeAttribute('onclick');studioButton.onclick=()=>openPreviewModal(encodeURIComponent(v.rel_path));studioButton.textContent='Chỉ còn thành phẩm · Xem video';}else studioButton.textContent = 'Mở Studio'; studioButton.className = 'nb-button primary full';
         const moveButton = card.querySelector('[onclick^="openMoveFolder"]');
         const viewButton = card.querySelector('[onclick^="openPreviewModal"]:not(.absolute)');
         const oldActions = viewButton.parentElement;

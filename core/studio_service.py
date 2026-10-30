@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 from . import studio_store as store, studio_media as media
 from .dub_timing import schedule
-from .tts_runtime import library as voice_library, ProviderUnavailable
+from .tts_runtime import library as voice_library, ProviderUnavailable, runtime as local_runtime
 
 TERMINAL = {'completed', 'partial', 'error', 'cancelled', 'interrupted'}
 
@@ -376,6 +376,11 @@ class StudioService:
                 lease = self.voice_leases.pop(job['id'], None)
                 if lease:
                     lease.__exit__(None, None, None)
+                from .studio_cleanup import clean_temporary
+                try:
+                    clean_temporary(work)
+                except OSError:
+                    pass
                 self.events.pop(job['id'], None)
                 self.host._release_source_job(video)
 
@@ -428,15 +433,24 @@ class StudioService:
                     elif voice['provider'] == 'omnivoice':
                         task = self.host.dubber.synthesize_omnivoice(text, str(reference))
                     elif voice['provider'] == 'vieneu':
-                        task = self.host.dubber.synthesize_sentence(text, voice['voice'], provider='vieneu',
-                                                                   cancelled=event.is_set, refresh=refresh)
+                        local_metrics = {}
+                        job['local_runtime'] = local_metrics
+                        task = asyncio.to_thread(local_runtime.synthesize, text, voice['voice'], event.is_set, refresh, local_metrics)
                     else:
                         raise ValueError('Provider TTS không hợp lệ')
                     pending = asyncio.create_task(task)
                     try:
                         while not pending.done():
                             if event.is_set():
-                                pending.cancel()
+                                if voice['provider'] in ('vieneu', 'omnivoice'):
+                                    # A thread cannot be stopped by cancelling its Future.
+                                    # Keep the source/voice lease until the model returns.
+                                    try:
+                                        await asyncio.shield(pending)
+                                    except Exception:
+                                        pass
+                                else:
+                                    pending.cancel()
                                 raise media.Cancelled()
                             await asyncio.sleep(.1)
                         content = await pending
@@ -572,6 +586,7 @@ class StudioService:
         result = media.render(video, data, output, work, event.is_set, track,
                               job['options'].get('at',0) if job['kind']=='preview' else None,
                               entries if track else None)
+        media.probe(output)
         job['output_has_audio'] = media.has_audio(output)
         if track and not job['output_has_audio']:
             raise ValueError('File xuất thiếu âm thanh lồng tiếng')
@@ -620,4 +635,9 @@ class StudioService:
             finally:
                 if lease:
                     lease.__exit__(None, None, None)
+                from .studio_cleanup import clean_temporary
+                try:
+                    clean_temporary(work)
+                except OSError:
+                    pass
                 self.events.pop(jid,None)
