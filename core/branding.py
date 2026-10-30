@@ -81,9 +81,12 @@ def asset_path(directory, key):
         raise ValueError('Đường dẫn ảnh thương hiệu không hợp lệ')
     return path
 
-def put_png(directory, image):
+def png_bytes(image):
     data = io.BytesIO();image.save(data,format='PNG')
-    content = data.getvalue();key = hashlib.sha256(content).hexdigest()
+    return data.getvalue()
+
+def put_png(directory, image):
+    content = png_bytes(image);key = hashlib.sha256(content).hexdigest()
     target = asset_path(directory,key)
     if not target.exists():
         tmp = target.with_name(uuid.uuid4().hex+'.tmp')
@@ -136,7 +139,7 @@ def text_image(layer, width, height):
     ImageDraw.Draw(image).multiline_text((2-bbox[0],2-bbox[1]),text,font=font,fill=layer['color'],stroke_fill=layer['outline_color'],stroke_width=stroke,spacing=round(size*.2))
     return image
 
-def layers(config, directory, width, height):
+def layers(config, directory, width, height, write=True):
     """Raster payloads and normalized geometry shared by browser and FFmpeg."""
     config=validate(config)
     result=[]
@@ -151,7 +154,7 @@ def layers(config, directory, width, height):
         if image.width>width or image.height>height:
             ratio=min(width/image.width,height/image.height)
             image=image.resize((max(1,int(image.width*ratio)),max(1,int(image.height*ratio))),Image.Resampling.LANCZOS)
-        key=put_png(directory,image)
+        key=put_png(directory,image) if write else hashlib.sha256(png_bytes(image)).hexdigest()
         x=min(round(layer['x']*width),width-image.width);y=min(round(layer['y']*height),height-image.height)
         result.append(dict(kind=kind,image=key,x=x/width,y=y/height,width=image.width/width,height=image.height/height,opacity=layer['opacity'],start=layer['start'],end=layer['end']))
     return result

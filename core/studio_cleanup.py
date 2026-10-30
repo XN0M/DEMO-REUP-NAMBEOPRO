@@ -44,9 +44,10 @@ class StudioCleanup:
                     rel = p.relative_to(assets)
                     # Only Studio-owned names; leave unknown assets untouched.
                     if (len(rel.parts) == 1 and (name in ('audio.json', 'original.transcript.json') or name.startswith(('preview-r', 'export-r')) and p.suffix == '.mp4')
+                        or rel.parts[0] == 'branding' and re.fullmatch(r'[0-9a-f]{64}\.png', name)
                         or rel.parts[0] == 'versions' and p.suffix == '.json'
                         or rel.parts[0] == 'audio' and re.fullmatch(r'[0-9a-f]{64}(?:-[0-9a-f]{16}-[0-9a-f]{16})?\.wav', name)
-                        or rel.parts[0] == 'jobs' and name in ('voice.wav', 'wave.wav', 'output.mp4', 'subtitles.ass', 'captions.ass')):
+                        or rel.parts[0] == 'jobs' and name in ('voice.wav', 'wave.wav', 'output.mp4', 'subtitles.ass', 'captions.ass', 'brand-logo.png', 'brand-text.png', 'DejaVuSans.ttf', 'DejaVuSans-Bold.ttf')):
                         result.append(p)
         return [self.safe(p) for p in result if p.is_file()]
 
@@ -83,6 +84,17 @@ class StudioCleanup:
                         protected.add(key + '.wav')
                         cue_key = hashlib.sha256(seg['id'].encode('utf-8')).hexdigest()[:16]
                         protected.add(f'{key}-{cue_key}-{store.timing_key(snapshot)[:16]}.wav')
+                from . import branding
+                brand_keys = set()
+                for snapshot in snapshots:
+                    brand = branding.normalize(snapshot.get('studio_config', {}).get('branding', {}))
+                    if brand['logo']['image']:
+                        brand_keys.add(brand['logo']['image'])
+                    # Calculate hashes without creating files while planning cleanup.
+                    if mode == 'compact' and any(layer['enabled'] for layer in brand.values()):
+                        width, height = branding.dimensions(media.probe(video), snapshot['studio_config']['render']['aspect'])
+                        brand_keys.update(layer['image'] for layer in branding.layers(brand, assets/'branding',width,height,write=False))
+                candidates = self.files(video)
                 manifest = self.s.manifest(video)
                 protected_aligned = {e.get('aligned') for e in manifest.values()}
                 remove = []
@@ -90,6 +102,8 @@ class StudioCleanup:
                     if p == output:
                         continue
                     if mode == 'output_only':
+                        remove.append(p)
+                    elif p.parent == assets / 'branding' and p.stem not in brand_keys:
                         remove.append(p)
                     elif assets in p.parents and p.parent == assets / 'audio' and p.name not in protected and str(p.relative_to(assets)).replace('\\', '/') not in protected_aligned:
                         remove.append(p)
@@ -186,7 +200,7 @@ def clean_temporary(work):
     for path in work.iterdir() if work.exists() else []:
         if path.is_symlink() or not path.is_file():
             continue
-        if path.name in ('voice.wav', 'wave.wav', 'output.mp4', 'subtitles.ass', 'captions.ass') or re.fullmatch(r'[0-9a-f-]{32,36}(?:-ref)?\.(?:wav|audio)', path.name):
+        if path.name in ('voice.wav', 'wave.wav', 'output.mp4', 'subtitles.ass', 'captions.ass', 'brand-logo.png', 'brand-text.png', 'DejaVuSans.ttf', 'DejaVuSans-Bold.ttf') or re.fullmatch(r'[0-9a-f-]{32,36}(?:-ref)?\.(?:wav|audio)', path.name):
             try:
                 path.unlink()
             except OSError:

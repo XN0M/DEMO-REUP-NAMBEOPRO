@@ -234,6 +234,19 @@ def render(video, data, output, work, cancelled, voice_track=None, preview_at=No
         else:
             filters += [f'[base]drawbox=x={x}:y={y}:w={mw}:h={mh}:color=black:t=fill[masked]']
         tag = 'masked'
+    from . import branding
+    directory = Path(os.path.splitext(str(video))[0] + '.studio-assets') / 'branding'
+    brand = branding.validate(cfg.get('branding', {}), info['duration'])
+    for index, layer in enumerate(branding.layers(brand, directory, width, height)):
+        name = f'brand-{layer["kind"]}.png'
+        shutil.copyfile(branding.asset_path(directory, layer['image']), work / name)
+        begin = 0 if layer['start'] is None else max(0, (layer['start'] - start) / speed)
+        finish = (end + tail - start) / speed if layer['end'] is None else (layer['end'] - start) / speed
+        if finish <= begin:
+            continue
+        filters.append(f"movie=filename={name},format=rgba,colorchannelmixer=aa={layer['opacity']:.8f}[brand{index}]")
+        filters.append(f"[{tag}][brand{index}]overlay=x={round(layer['x']*width)}:y={round(layer['y']*height)}:eof_action=repeat:enable='gte(t,{begin:.8f})*lt(t,{finish:.8f})'[branded{index}]")
+        tag = f'branded{index}'
     filters.append(f'[{tag}]ass=filename=captions.ass:fontsdir=.[v]' if options.get('subtitles', True) else f'[{tag}]null[v]')
     args = ['-i', video]
     audio_map = []

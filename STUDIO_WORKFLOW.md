@@ -10,3 +10,16 @@
 - Luôn xem danh sách xóa và dung lượng trước khi xác nhận. File lạ được giữ lại; file bị khóa có thể thử dọn tiếp. Không xóa model hoặc cache dùng chung.
 
 Xem thử trực tiếp là công cụ chỉnh nhanh. Hiệu ứng ducking chính xác và kiểu chữ cuối cùng cần duyệt qua bản render. Chưa nghiệm thu độ lệch đồng bộ dưới 100 ms trên trình duyệt thực tế.
+
+
+## Logo và watermark
+
+Quy trình Studio: **Bản thoại & Dịch → Phụ đề → Thương hiệu → Lồng tiếng → Xuất video**.
+
+Trong **Thương hiệu**, tải PNG/WebP tĩnh (tối đa 5 MB, 4096×4096), bật watermark chữ hoặc dùng cả hai. Kéo thành phần trên video để đổi vị trí; kéo góc ↘ để chỉnh chiều rộng. Các vị trí góc, kích thước, độ mờ và khoảng hiển thị có thể chỉnh riêng. Thời gian đặt theo video gốc và tự quy đổi khi trim/đổi tốc độ.
+
+Bộ thương hiệu có tên dùng lại cho nhiều video; áp dụng bộ chỉ thay phần thương hiệu. Dự án giữ bản sao logo riêng, nên cập nhật/xóa bộ dùng chung không thay đổi dự án cũ. **Bỏ qua bước này** tắt cả logo và chữ trong video hiện tại.
+
+Preview và bản xuất dùng chung ảnh watermark chữ, font và hình học. Thứ tự lớp: video → vùng che chữ gốc → logo → watermark chữ → phụ đề mới. Giao diện cảnh báo khi vùng thương hiệu và phụ đề đang hiển thị chạm nhau. Luôn render thử để duyệt chất lượng trước khi xuất.
+
+Lưu gọn bảo toàn ảnh được dự án/phiên bản/tác vụ tham chiếu; chỉ giữ thành phẩm sẽ dọn tài nguyên riêng của dự án và giữ nguyên thư viện bộ thương hiệu.
