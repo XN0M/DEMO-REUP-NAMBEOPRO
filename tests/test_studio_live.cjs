@@ -1,0 +1,14 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('web/studio.js','utf8');
+let paused=0,played=0;
+const context={console,Map,Set,requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},Audio:class{constructor(url){this.url=url;this.currentTime=0;this.readyState=4;this.paused=true;}pause(){this.paused=true;}play(){played++;this.paused=false;return Promise.resolve();}load(){}removeAttribute(){}},root:{},liveDub:true,liveSkip:false,video:{currentTime:2,paused:false,seeking:false,playbackRate:1,pause(){paused++;this.paused=true;}},renderedStage:{classList:{contains:()=>true}},state:{filepath:'test',project:{studio_config:{mix:{voice_volume:.8,bg_volume:.15}},segments:[{id:'a',start:1,end:4}]}},audioEntries:{a:{play_start:1,play_end:4,aligned:'a.wav'}},asset:x=>x,localStatus:()=> 'ready',message:()=>{},audioPlayer:null};
+vm.createContext(context);
+const code=source.slice(source.indexOf('  let liveDub='),source.indexOf('  function setupLive()')).replace('let liveDub=false, liveSkip=false,','let');
+vm.runInContext(code,context);vm.runInContext('liveTick()',context);
+assert.equal(played,1);assert.equal(vm.runInContext("liveAudio.get('a.wav').currentTime",context),1);
+context.video.currentTime=3;vm.runInContext('liveTick()',context);assert.equal(vm.runInContext("liveAudio.get('a.wav').currentTime",context),2);
+context.video.paused=true;vm.runInContext('liveTick()',context);assert.equal(vm.runInContext("liveAudio.get('a.wav').paused",context),true);
+context.localStatus=()=> 'stale';context.video.paused=false;vm.runInContext('liveTick()',context);assert.equal(paused,1);
+context.video.paused=false;context.liveSkip=true;vm.runInContext('liveTick()',context);assert.equal(paused,1);
+vm.runInContext('stopLive(true)',context);assert.equal(vm.runInContext('liveAudio.size',context),0);
+console.log('Live preview: seek, pause, stale audio, skip and cleanup passed');
