@@ -172,7 +172,8 @@ def validate(data, duration):
     for key in ('voice_volume', 'bg_volume'):
         cfg['mix'][key] = number(cfg['mix'][key], 0, 3, key)
     cfg['reading_speed'] = number(cfg['reading_speed'], 1, 100, 'Tốc độ đọc')
-    cfg['timing']['max_speed'] = number(cfg['timing']['max_speed'], 1, 1.65, 'Tốc độ giọng tối đa')
+    cfg['timing']['max_speed'] = number(cfg['timing']['max_speed'], 1,
+        1.25 if cfg['timing'].get('policy') == 'natural-v1' else 1.65, 'Tốc độ giọng tối đa')
     cfg['timing']['max_overlap'] = number(cfg['timing']['max_overlap'], 0, 1, 'Chồng tiếng tối đa')
     cfg['caption_hold'] = number(cfg['caption_hold'], 10, 15, 'Thời gian hiện phụ đề')
     render = cfg['render']

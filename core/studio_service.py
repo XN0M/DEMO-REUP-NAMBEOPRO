@@ -388,11 +388,14 @@ class StudioService:
         selected = [s for s in data['segments'] if s['id'] in job['segment_ids']]
         blocked_providers = {}
         refresh = job['options'].get('refresh') is True
+        job['metrics'] = {'cache_hits': 0, 'queue_seconds': 0, 'synthesis_seconds': 0, 'conversion_seconds': 0}
         async def sentence(seg):
+            queued = time.monotonic()
             while not self.tts_slots.acquire(blocking=False):
                 if event.is_set():
                     raise media.Cancelled()
                 await asyncio.sleep(.1)
+            job['metrics']['queue_seconds'] += time.monotonic() - queued
             key = store.audio_key(data, seg, self.fingerprint(video))
             raw = Path(self.check(cache / (key + '.wav')))
             entry = dict(key=key, start=seg['start'], end=seg['end'])
@@ -403,7 +406,12 @@ class StudioService:
                 if not text:
                     raise ValueError('Câu chưa có lời đọc/bản dịch')
                 voice = store.voice_for(data, seg)
+                if not refresh and raw.exists():
+                    job['metrics']['cache_hits'] += 1
                 if refresh or not raw.exists():
+                    started = time.monotonic()
+                    job['message'] = 'Đang tạo giọng'
+                    self.update(job)
                     if voice['provider'] in blocked_providers:
                         raise blocked_providers[voice['provider']]
                     cfg = self.host.load_app_config()
@@ -412,7 +420,7 @@ class StudioService:
                         if not data['studio_config']['clone_consent']:
                             raise ValueError('Cần xác nhận quyền sử dụng giọng nhân bản')
                         reference = work / f'{seg["id"]}-ref.wav'
-                        media.run(['-ss', seg['start'], '-t', seg['end']-seg['start'], '-i', video, '-vn', '-ac', '1', reference], event.is_set)
+                        await asyncio.to_thread(media.run, ['-ss', seg['start'], '-t', seg['end']-seg['start'], '-i', video, '-vn', '-ac', '1', reference], event.is_set)
                     if voice['provider'] == 'edge':
                         task = self.host.dubber.synthesize_edge(text, voice['voice'])
                     elif voice['provider'] == 'openai':
@@ -441,15 +449,20 @@ class StudioService:
                             pass
                     if event.is_set():
                         raise media.Cancelled()
+                    job['metrics']['synthesis_seconds'] += time.monotonic() - started
+                    converted = time.monotonic()
+                    job['message'] = 'Đang chuyển đổi audio'
+                    self.update(job)
                     encoded = work / f'{seg["id"]}.audio'
                     encoded.write_bytes(content)
                     staged = work / f'{seg["id"]}.wav'
-                    media.run(['-i', encoded, '-ac', '1', '-ar', '48000' if voice['provider']=='vieneu' else '24000', '-c:a', 'pcm_s16le', staged], event.is_set)
+                    await asyncio.to_thread(media.run, ['-i', encoded, '-ac', '1', '-ar', '48000' if voice['provider']=='vieneu' else '24000', '-c:a', 'pcm_s16le', staged], event.is_set)
                     with wave.open(str(staged), 'rb') as audio:
                         if audio.getnframes() == 0:
                             raise ValueError('Audio trống')
                     os.replace(staged, raw)
                     encoded.unlink(missing_ok=True)
+                    job['metrics']['conversion_seconds'] += time.monotonic() - converted
                     if refresh:
                         with store.LOCK:
                             manifest[seg['id']] = {**entry, 'status': 'needs_alignment'}
@@ -480,7 +493,11 @@ class StudioService:
             if isinstance(result, BaseException):
                 raise result
         if job['completed']:
-            self.realign(video, data, manifest, assets, event)
+            started = time.monotonic()
+            job['message'] = 'Đang căn giọng theo timeline'
+            self.update(job)
+            await asyncio.to_thread(self.realign, video, data, manifest, assets, event)
+            job['metrics']['alignment_seconds'] = time.monotonic() - started
 
     async def translate(self, job, event):
         data = job['snapshot']
