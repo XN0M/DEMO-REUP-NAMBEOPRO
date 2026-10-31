@@ -11,6 +11,9 @@ import warnings
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 
+MAX_UPLOAD_MB = 20
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+
 FONT_DIR = Path(__file__).resolve().parents[1] / 'web' / 'fonts'
 COMMON = dict(enabled=False, x=.03, y=.03, width=.3, opacity=.7, start=None, end=None)
 DEFAULT = dict(logo=dict(COMMON, image=None, x=.85, width=.12, opacity=.8),
@@ -98,8 +101,8 @@ def put_png(directory, image):
 def upload(directory, content, filename):
     suffix = Path(filename).suffix.lower()
     formats = {'.png':'PNG','.webp':'WEBP','.jpg':'JPEG','.jpeg':'JPEG'}
-    if suffix not in formats or not content or len(content)>5*1024*1024:
-        raise ValueError('Chọn PNG/WebP/JPG/JPEG tĩnh, tối đa 5 MB')
+    if suffix not in formats or not content or len(content)>MAX_UPLOAD_BYTES:
+        raise ValueError(f'Chọn PNG/WebP/JPG/JPEG tĩnh, tối đa {MAX_UPLOAD_MB} MB')
     try:
         with warnings.catch_warnings():
             warnings.simplefilter('error',Image.DecompressionBombWarning)

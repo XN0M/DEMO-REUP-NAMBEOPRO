@@ -48,7 +48,7 @@ def main():
                 expect(page.get_by_role('tab')).to_have_count(5)
                 expect(page.get_by_role('tab',name='3. Thương hiệu')).to_have_attribute('aria-selected','true')
                 image=io.BytesIO();Image.new('RGBA',(120,60),(255,0,0,200)).save(image,format='PNG')
-                page.get_by_label('Tải logo PNG, WebP hoặc JPG').set_input_files({'name':'logo.png','mimeType':'image/png','buffer':image.getvalue()})
+                page.get_by_label('Tải logo PNG, WebP hoặc JPG').set_input_files({'name':'large.png','mimeType':'image/png','buffer':image.getvalue()+b'\0'*(6*1024*1024-len(image.getvalue()))})
                 expect(page.locator('[data-brand-kind=logo]')).to_be_visible()
                 page.get_by_label('Bật Watermark chữ',exact=True).check()
                 page.get_by_label('Nội dung watermark',exact=True).fill('Thương hiệu Việt\nNambeo')
@@ -120,6 +120,8 @@ def main():
                 def old_server(route):
                     if '/branding/frame' in route.request.url:
                         route.fulfill(status=404,content_type='application/json',body='{"detail":"Not Found"}')
+                    elif 'filename=big.png' in route.request.url:
+                        route.fulfill(status=400,content_type='application/json',body='{"detail":"Logo tối đa 5 MB"}')
                     elif 'filename=logo.jpg' in route.request.url:
                         route.fulfill(status=400,content_type='application/json',body='{"detail":"Chọn PNG/WebP tĩnh, tối đa 5 MB"}')
                     else:route.continue_()
@@ -136,6 +138,13 @@ def main():
                 expect(still.locator('[data-brand-kind=logo]')).to_be_visible()
                 still.get_by_label('Mốc lấy ảnh (giây)',exact=True).fill('2');still.get_by_role('button',name='Lấy ảnh',exact=True).click()
                 expect(still.locator('[data-still-status=frame]')).to_contain_text('Đã lấy ảnh trong trình duyệt',timeout=12000)
+                still.get_by_label('Chọn logo cho ảnh preview').set_input_files({'name':'big.png','mimeType':'image/png','buffer':image.getvalue()+b'\0'*(6*1024*1024-len(image.getvalue()))})
+                expect(still.locator('[data-still-status=upload]')).to_contain_text('giới hạn cũ 5 MB')
+                expect(still.locator('[data-still-status=upload]')).to_contain_text('20 MB')
+                attempts=[];page.on('request',lambda req:attempts.append(req.url) if 'filename=over.png' in req.url else None)
+                still.get_by_label('Chọn logo cho ảnh preview').set_input_files({'name':'over.png','mimeType':'image/png','buffer':b'x'*(20*1024*1024+1)})
+                expect(still.locator('[data-still-status=upload]')).to_contain_text('không quá 20 MB')
+                assert not attempts,'Oversized image must be rejected before uploading'
                 # A failed file and a subsequent frame response must keep separate messages.
                 still.get_by_label('Chọn logo cho ảnh preview').set_input_files({'name':'bad.jpg','mimeType':'image/jpeg','buffer':b'not an image'})
                 expect(still.locator('[data-still-status=upload]')).to_have_class('danger')
@@ -146,7 +155,7 @@ def main():
                 still.screenshot(path=str(parent/'branding-jpg-legacy-server.png'))
                 still.get_by_role('button',name='Đóng',exact=True).click()
                 assert not errors,errors
-                browser.close();print('PASS: JPG upload, old-server frame fallback, isolated errors, still-image positioning and mobile')
+                browser.close();print('PASS: 6 MB logo upload, 20 MB limit, old-server warning, JPG fallback and still preview')
         finally:
             server.should_exit=True;thread.join(5);sock.close()
 

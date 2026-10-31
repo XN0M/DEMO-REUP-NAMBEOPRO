@@ -1,5 +1,6 @@
 /* Studio branding editor. Geometry and PNG glyphs come from the render backend. */
 (() => {
+  const logoMaxBytes=20*1024*1024;
   const copy=v=>JSON.parse(JSON.stringify(v));
   window.NambeoBranding=class {
     constructor(ctx){this.c=ctx;this.layers=[];this.nodes=[];this.sequence=0;this.key='';this.timer=null;this.dead=false;this.presets=[];this.still=null;this.dragging=false;this.status='';this.uploadSequence=0;this.refresh();}
@@ -61,7 +62,7 @@
       const update=(text,error=false)=>{if(!this.dead&&seq===this.uploadSequence)report(text,error);};
       try{
         if(!/\.(png|webp|jpe?g)$/i.test(file.name))throw Error('Chọn ảnh PNG, WebP, JPG hoặc JPEG.');
-        if(!file.size||file.size>5*1024*1024)throw Error('Logo cần có dữ liệu và không quá 5 MB.');
+        if(!file.size||file.size>logoMaxBytes)throw Error('Logo cần có dữ liệu và không quá 20 MB.');
         update('Đang tải logo…');
         const post=(content,name)=>fetch('/api/studio/branding/logo?'+new URLSearchParams({filepath:this.c.state().filepath,filename:name}),{method:'POST',body:content});
         let response=await post(file,file.name),error=response.ok?'':await this.responseError(response,'Không tải được logo');
@@ -70,10 +71,11 @@
           let image;try{image=await createImageBitmap(file);}catch(_){throw Error('Không đọc được ảnh JPG. Hãy chọn một tệp ảnh hợp lệ.');}
           try{if(image.width>4096||image.height>4096)throw Error('Logo không được quá 4096×4096 pixel.');
             const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;canvas.getContext('2d').drawImage(image,0,0);
-            const png=await this.canvasBlob(canvas);if(png.size>5*1024*1024)throw Error('Máy chủ đang dùng bản cũ. Hãy khởi động lại ứng dụng để tải ảnh JPG này.');
+            const png=await this.canvasBlob(canvas);if(png.size>logoMaxBytes)throw Error('Ảnh JPG sau khi chuyển đổi vượt 20 MB. Hãy giảm kích thước ảnh rồi thử lại.');
             response=await post(png,'logo.png');error=response.ok?'':await this.responseError(response,'Không tải được logo');
           }finally{image.close();}
         }
+        if(!response.ok&&response.status===400&&/5\s*MB/i.test(error))throw Error('Máy chủ đang dùng giới hạn cũ 5 MB. Hãy khởi động lại ứng dụng để nạp giới hạn 20 MB rồi chọn lại ảnh.');
         if(!response.ok)throw Error(response.status===404?'Máy chủ chưa có chức năng tải logo. Hãy khởi động lại ứng dụng.':error);
         const result=await response.json();if(!result.image)throw Error('Ứng dụng chưa trả ảnh logo hợp lệ.');if(this.dead||seq!==this.uploadSequence)return;
         this.c.modify(()=>{const cfg=this.config().logo;cfg.image=result.image;cfg.enabled=true;});
@@ -161,7 +163,7 @@
         const layer=config[kind],box=section(title),change=(key,value)=>{layer[key]=value;};
         box.append(field('Bật '+title,layer.enabled,'checkbox',v=>{if(kind==='logo'&&v&&!layer.image)throw Error('Tải logo trước');if(kind==='text'&&v&&!layer.content)layer.content='Tên thương hiệu';layer.enabled=v;}));
         if(kind==='logo'){
-          const input=el('input');input.type='file';input.accept='.png,.webp,.jpg,.jpeg';input.setAttribute('aria-label','Tải logo PNG, WebP hoặc JPG');input.onchange=()=>{const file=input.files[0];input.value='';this.uploadLogo(file);};box.append(input,el('small','PNG, WebP, JPG/JPEG · tối đa 5 MB','muted'));
+          const input=el('input');input.type='file';input.accept='.png,.webp,.jpg,.jpeg';input.setAttribute('aria-label','Tải logo PNG, WebP hoặc JPG');input.onchange=()=>{const file=input.files[0];input.value='';this.uploadLogo(file);};box.append(input,el('small','PNG, WebP, JPG/JPEG · tối đa 20 MB','muted'));
         }else{
           const textarea=el('textarea');textarea.value=layer.content;textarea.maxLength=200;textarea.setAttribute('aria-label','Nội dung watermark');textarea.onchange=()=>c.modify(()=>layer.content=textarea.value);box.append(textarea);
           box.append(field('Chữ đậm',layer.bold,'checkbox',v=>change('bold',v)),field('Màu watermark',layer.color,'color',v=>change('color',v)),field('Màu viền watermark',layer.outline_color,'color',v=>change('outline_color',v)),field('Cỡ watermark',layer.size,'range',v=>change('size',v),{min:12,max:120,step:1}),field('Độ dày viền watermark',layer.outline,'range',v=>change('outline',v),{min:0,max:10,step:.5}));

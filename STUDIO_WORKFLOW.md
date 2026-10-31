@@ -16,7 +16,7 @@ Xem thử trực tiếp là công cụ chỉnh nhanh. Hiệu ứng ducking chín
 
 Quy trình Studio: **Bản thoại & Dịch → Phụ đề → Thương hiệu → Lồng tiếng → Xuất video**.
 
-Trong **Thương hiệu**, tải PNG/WebP/JPG/JPEG tĩnh (tối đa 5 MB, 4096×4096), bật watermark chữ hoặc dùng cả hai. Kéo thành phần trên video để đổi vị trí; kéo góc ↘ để chỉnh chiều rộng. Các vị trí góc, kích thước, độ mờ và khoảng hiển thị có thể chỉnh riêng. Thời gian đặt theo video gốc và tự quy đổi khi trim/đổi tốc độ.
+Trong **Thương hiệu**, tải PNG/WebP/JPG/JPEG tĩnh (tối đa 20 MB, 4096×4096), bật watermark chữ hoặc dùng cả hai. Kéo thành phần trên video để đổi vị trí; kéo góc ↘ để chỉnh chiều rộng. Các vị trí góc, kích thước, độ mờ và khoảng hiển thị có thể chỉnh riêng. Thời gian đặt theo video gốc và tự quy đổi khi trim/đổi tốc độ.
 
 Bộ thương hiệu có tên dùng lại cho nhiều video; áp dụng bộ chỉ thay phần thương hiệu. Dự án giữ bản sao logo riêng, nên cập nhật/xóa bộ dùng chung không thay đổi dự án cũ. **Bỏ qua bước này** tắt cả logo và chữ trong video hiện tại.
 
@@ -38,3 +38,5 @@ Trong bước **Thương hiệu**, bấm **Đặt logo trên ảnh** (hoặc **M
 
 
 Ảnh logo JPG/JPEG được chuẩn hóa thành PNG và giữ đúng chiều xoay. Nếu ứng dụng đang chạy máy chủ cũ chưa có chức năng lấy ảnh nền, khung preview tự lấy ảnh từ video trong trình duyệt; không cần dừng công việc chỉ để lấy ảnh. Thông báo tải logo và ảnh nền hiển thị riêng. Khi cập nhật mã nguồn, dùng **Ctrl + F5** để nạp giao diện mới; khởi động lại ứng dụng khi thuận tiện để nạp đầy đủ phần máy chủ.
+
+Giới hạn logo hiện là **20 MB mỗi ảnh**. Nếu máy chủ còn báo mức 5 MB, hãy khởi động lại ứng dụng để nạp giới hạn mới, rồi tải lại trang và chọn lại ảnh.

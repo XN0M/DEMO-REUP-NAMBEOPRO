@@ -37,7 +37,7 @@ def attach(router, service, call):
         content=bytearray()
         async for chunk in request.stream():
             content.extend(chunk)
-            if len(content)>5*1024*1024:raise HTTPException(400,'Logo tối đa 5 MB')
+            if len(content)>branding.MAX_UPLOAD_BYTES:raise HTTPException(400,f'Logo tối đa {branding.MAX_UPLOAD_MB} MB')
         def process():
             _,directory=project_dir(filepath)
             return {'image':branding.upload(directory,bytes(content),filename)}

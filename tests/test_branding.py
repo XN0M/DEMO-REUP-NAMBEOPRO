@@ -32,7 +32,7 @@ class Branding(unittest.TestCase):
         self.assertEqual(key,branding.upload(self.directory,png(),'again.png'))
         branding.upload(self.directory,png(format='WEBP'),'logo.webp')
     def test_invalid_images_and_ids(self):
-        for content,name in [(b'<svg/>','a.svg'),(png(),'a.webp'),(b'bad','a.png'),(b'x'*(5*1024*1024+1),'a.png'),(png(size=(4097,1)),'a.png')]:
+        for content,name in [(b'<svg/>','a.svg'),(png(),'a.webp'),(b'bad','a.png'),(b'x'*(branding.MAX_UPLOAD_BYTES+1),'a.png'),(png(size=(4097,1)),'a.png')]:
             with self.assertRaises(ValueError):branding.upload(self.directory,content,name)
         with self.assertRaises(ValueError):branding.asset_path(self.directory,'../../file')
         data=io.BytesIO();im=Image.new('RGBA',(4,4));im.save(data,format='PNG',save_all=True,append_images=[Image.new('RGBA',(4,4),'red')],duration=10,loop=0)
@@ -94,6 +94,10 @@ class Branding(unittest.TestCase):
                 self.assertEqual(response.headers['content-type'],'image/jpeg')
                 self.assertEqual(response.headers['cache-control'],'no-store')
                 extract.assert_called_once_with(str(video),'9:16',1.5)
+            payload=png();large=payload+b'\0'*(6*1024*1024-len(payload))
+            self.assertEqual(client.post('/api/studio/branding/logo?filepath=source.mp4&filename=large.png',content=large).status_code,200)
+            over=client.post('/api/studio/branding/logo?filepath=source.mp4&filename=over.png',content=b'x'*(branding.MAX_UPLOAD_BYTES+1))
+            self.assertEqual(over.status_code,400);self.assertIn('20 MB',over.json()['detail'])
             self.assertIn(client.get('/api/studio/branding/frame?filepath=source.mp4&at=-1').status_code,(400,422))
             self.assertEqual(client.get('/api/studio/branding/frame?filepath=../outside.mp4').status_code,400)
 
@@ -106,3 +110,12 @@ class Branding(unittest.TestCase):
                 self.assertEqual(normalized.size,(40,80));self.assertEqual(normalized.mode,'RGBA')
                 self.assertEqual(normalized.getpixel((0,0))[3],255);self.assertFalse(normalized.getexif())
         with self.assertRaises(ValueError):branding.upload(self.directory,payload.getvalue(),'fake.png')
+
+    def test_upload_size_limits_include_20mb_boundary(self):
+        # Padding a small valid PNG exercises byte limits without decoding a huge image.
+        payload=png()
+        for size in (6*1024*1024,branding.MAX_UPLOAD_BYTES):
+            key=branding.upload(self.directory,payload+b'\0'*(size-len(payload)),'large.png')
+            self.assertTrue(branding.asset_path(self.directory,key).exists())
+        with self.assertRaisesRegex(ValueError,'20 MB'):
+            branding.upload(self.directory,payload+b'\0'*(branding.MAX_UPLOAD_BYTES+1-len(payload)),'over.png')
