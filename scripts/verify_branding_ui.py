@@ -48,7 +48,7 @@ def main():
                 expect(page.get_by_role('tab')).to_have_count(5)
                 expect(page.get_by_role('tab',name='3. Thương hiệu')).to_have_attribute('aria-selected','true')
                 image=io.BytesIO();Image.new('RGBA',(120,60),(255,0,0,200)).save(image,format='PNG')
-                page.get_by_label('Tải logo PNG hoặc WebP').set_input_files({'name':'logo.png','mimeType':'image/png','buffer':image.getvalue()})
+                page.get_by_label('Tải logo PNG, WebP hoặc JPG').set_input_files({'name':'logo.png','mimeType':'image/png','buffer':image.getvalue()})
                 expect(page.locator('[data-brand-kind=logo]')).to_be_visible()
                 page.get_by_label('Bật Watermark chữ',exact=True).check()
                 page.get_by_label('Nội dung watermark',exact=True).fill('Thương hiệu Việt\nNambeo')
@@ -115,8 +115,38 @@ def main():
                 expect(page.locator('[data-brand-status]')).to_have_text('')
                 still.screenshot(path=str(parent/'branding-still-mobile.png'))
                 still.get_by_role('button',name='Đóng',exact=True).click()
+                page.set_viewport_size({'width':1500,'height':1000})
+                # Reproduce an older running backend: no frame route and PNG-only uploads.
+                def old_server(route):
+                    if '/branding/frame' in route.request.url:
+                        route.fulfill(status=404,content_type='application/json',body='{"detail":"Not Found"}')
+                    elif 'filename=logo.jpg' in route.request.url:
+                        route.fulfill(status=400,content_type='application/json',body='{"detail":"Chọn PNG/WebP tĩnh, tối đa 5 MB"}')
+                    else:route.continue_()
+                page.route('**/api/studio/branding/frame?**',old_server)
+                page.route('**/api/studio/branding/logo?**',old_server)
+                page.get_by_role('button',name='Đặt logo trên ảnh',exact=True).click()
+                still=page.get_by_role('dialog',name='Ảnh preview đặt logo',exact=True)
+                expect(still.locator('[data-still-status=frame]')).to_contain_text('Đã lấy ảnh trong trình duyệt',timeout=12000)
+                expect(still.locator('.brandingStillBackground')).to_be_visible()
+                jpeg=io.BytesIO();Image.new('RGB',(90,45),'green').save(jpeg,format='JPEG')
+                still.get_by_label('Chọn logo cho ảnh preview').set_input_files({'name':'logo.jpg','mimeType':'image/jpeg','buffer':jpeg.getvalue()})
+                expect(still.locator('[data-still-status=upload]')).to_contain_text('Đã tải logo')
+                expect(page.locator('[data-brand-status]')).to_have_text('')
+                expect(still.locator('[data-brand-kind=logo]')).to_be_visible()
+                still.get_by_label('Mốc lấy ảnh (giây)',exact=True).fill('2');still.get_by_role('button',name='Lấy ảnh',exact=True).click()
+                expect(still.locator('[data-still-status=frame]')).to_contain_text('Đã lấy ảnh trong trình duyệt',timeout=12000)
+                # A failed file and a subsequent frame response must keep separate messages.
+                still.get_by_label('Chọn logo cho ảnh preview').set_input_files({'name':'bad.jpg','mimeType':'image/jpeg','buffer':b'not an image'})
+                expect(still.locator('[data-still-status=upload]')).to_have_class('danger')
+                error=still.locator('[data-still-status=upload]').text_content()
+                still.get_by_role('button',name='Lấy ảnh',exact=True).click()
+                expect(still.locator('[data-still-status=frame]')).to_contain_text('Đã lấy ảnh trong trình duyệt',timeout=12000)
+                expect(still.locator('[data-still-status=upload]')).to_have_text(error)
+                still.screenshot(path=str(parent/'branding-jpg-legacy-server.png'))
+                still.get_by_role('button',name='Đóng',exact=True).click()
                 assert not errors,errors
-                browser.close();print('PASS: still-image logo positioning, frame capture, aspect changes, resize/save, mobile, presets and reopening')
+                browser.close();print('PASS: JPG upload, old-server frame fallback, isolated errors, still-image positioning and mobile')
         finally:
             server.should_exit=True;thread.join(5);sock.close()
 

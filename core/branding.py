@@ -9,7 +9,7 @@ import re
 import uuid
 import warnings
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 
 FONT_DIR = Path(__file__).resolve().parents[1] / 'web' / 'fonts'
 COMMON = dict(enabled=False, x=.03, y=.03, width=.3, opacity=.7, start=None, end=None)
@@ -97,15 +97,16 @@ def put_png(directory, image):
 
 def upload(directory, content, filename):
     suffix = Path(filename).suffix.lower()
-    if suffix not in ('.png','.webp') or not content or len(content)>5*1024*1024:
-        raise ValueError('Chọn PNG/WebP tĩnh, tối đa 5 MB')
+    formats = {'.png':'PNG','.webp':'WEBP','.jpg':'JPEG','.jpeg':'JPEG'}
+    if suffix not in formats or not content or len(content)>5*1024*1024:
+        raise ValueError('Chọn PNG/WebP/JPG/JPEG tĩnh, tối đa 5 MB')
     try:
         with warnings.catch_warnings():
             warnings.simplefilter('error',Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(content)) as image:
-                if image.format != ('.png' if suffix=='.png' else '.webp')[1:].upper() or getattr(image,'n_frames',1)!=1 or not (0<image.width<=4096 and 0<image.height<=4096):
+                if image.format != formats[suffix] or getattr(image,'n_frames',1)!=1 or not (0<image.width<=4096 and 0<image.height<=4096):
                     raise ValueError('Ảnh phải tĩnh, đúng định dạng và không quá 4096×4096')
-                rgba = image.convert('RGBA')
+                rgba = ImageOps.exif_transpose(image).convert('RGBA')
                 rgba.info.clear()
                 return put_png(directory,rgba)
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:

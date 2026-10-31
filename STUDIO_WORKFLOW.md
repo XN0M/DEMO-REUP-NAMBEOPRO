@@ -16,7 +16,7 @@ Xem thử trực tiếp là công cụ chỉnh nhanh. Hiệu ứng ducking chín
 
 Quy trình Studio: **Bản thoại & Dịch → Phụ đề → Thương hiệu → Lồng tiếng → Xuất video**.
 
-Trong **Thương hiệu**, tải PNG/WebP tĩnh (tối đa 5 MB, 4096×4096), bật watermark chữ hoặc dùng cả hai. Kéo thành phần trên video để đổi vị trí; kéo góc ↘ để chỉnh chiều rộng. Các vị trí góc, kích thước, độ mờ và khoảng hiển thị có thể chỉnh riêng. Thời gian đặt theo video gốc và tự quy đổi khi trim/đổi tốc độ.
+Trong **Thương hiệu**, tải PNG/WebP/JPG/JPEG tĩnh (tối đa 5 MB, 4096×4096), bật watermark chữ hoặc dùng cả hai. Kéo thành phần trên video để đổi vị trí; kéo góc ↘ để chỉnh chiều rộng. Các vị trí góc, kích thước, độ mờ và khoảng hiển thị có thể chỉnh riêng. Thời gian đặt theo video gốc và tự quy đổi khi trim/đổi tốc độ.
 
 Bộ thương hiệu có tên dùng lại cho nhiều video; áp dụng bộ chỉ thay phần thương hiệu. Dự án giữ bản sao logo riêng, nên cập nhật/xóa bộ dùng chung không thay đổi dự án cũ. **Bỏ qua bước này** tắt cả logo và chữ trong video hiện tại.
 
@@ -35,3 +35,6 @@ Giữ chuột hoặc chạm vào vùng **Kéo lên / xuống** giữa video và 
 Trong bước **Thương hiệu**, bấm **Đặt logo trên ảnh** (hoặc **Mở ảnh preview để đặt logo**). Khung riêng dùng một ảnh lấy từ video, không cần phát hay render video. Chọn mốc giây rồi bấm **Lấy ảnh**, tải logo ngay trong khung, kéo logo/chữ để đặt vị trí, kéo góc ↘ để đổi kích thước và bấm **Lưu vị trí**.
 
 Ảnh được cắt đúng tỷ lệ đầu ra; đổi tỷ lệ trong khung cũng đổi tỷ lệ video khi xuất. Khi chỉnh vị trí, khung hiện tất cả logo/chữ đã bật; khoảng thời gian xuất hiện của chúng vẫn giữ theo thiết lập. Ảnh nền được trả trực tiếp, không tạo file tạm trong dự án.
+
+
+Ảnh logo JPG/JPEG được chuẩn hóa thành PNG và giữ đúng chiều xoay. Nếu ứng dụng đang chạy máy chủ cũ chưa có chức năng lấy ảnh nền, khung preview tự lấy ảnh từ video trong trình duyệt; không cần dừng công việc chỉ để lấy ảnh. Thông báo tải logo và ảnh nền hiển thị riêng. Khi cập nhật mã nguồn, dùng **Ctrl + F5** để nạp giao diện mới; khởi động lại ứng dụng khi thuận tiện để nạp đầy đủ phần máy chủ.

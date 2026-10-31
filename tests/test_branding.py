@@ -96,3 +96,13 @@ class Branding(unittest.TestCase):
                 extract.assert_called_once_with(str(video),'9:16',1.5)
             self.assertIn(client.get('/api/studio/branding/frame?filepath=source.mp4&at=-1').status_code,(400,422))
             self.assertEqual(client.get('/api/studio/branding/frame?filepath=../outside.mp4').status_code,400)
+
+    def test_jpeg_upload_is_normalized_and_oriented(self):
+        payload=io.BytesIO();image=Image.new('RGB',(80,40),'red');exif=Image.Exif();exif[274]=6
+        image.save(payload,format='JPEG',exif=exif)
+        for filename in ('logo.jpg','logo.jpeg','LOGO.JPG'):
+            key=branding.upload(self.directory,payload.getvalue(),filename)
+            with Image.open(branding.asset_path(self.directory,key)) as normalized:
+                self.assertEqual(normalized.size,(40,80));self.assertEqual(normalized.mode,'RGBA')
+                self.assertEqual(normalized.getpixel((0,0))[3],255);self.assertFalse(normalized.getexif())
+        with self.assertRaises(ValueError):branding.upload(self.directory,payload.getvalue(),'fake.png')

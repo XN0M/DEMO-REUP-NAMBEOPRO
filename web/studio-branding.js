@@ -2,10 +2,10 @@
 (() => {
   const copy=v=>JSON.parse(JSON.stringify(v));
   window.NambeoBranding=class {
-    constructor(ctx){this.c=ctx;this.layers=[];this.nodes=[];this.sequence=0;this.key='';this.timer=null;this.dead=false;this.presets=[];this.still=null;this.dragging=false;this.status='';this.refresh();}
+    constructor(ctx){this.c=ctx;this.layers=[];this.nodes=[];this.sequence=0;this.key='';this.timer=null;this.dead=false;this.presets=[];this.still=null;this.dragging=false;this.status='';this.uploadSequence=0;this.refresh();}
     config(){return this.c.state().project.studio_config.branding;}
     url(key){return '/api/studio/branding/image/'+key+'?'+new URLSearchParams({filepath:this.c.state().filepath});}
-    note(text){this.status=text;this.c.root.querySelectorAll('[data-brand-status]').forEach(n=>n.textContent=text);}
+    note(text,error=false){this.status=text;this.statusError=error;this.c.root.querySelectorAll('[data-brand-status]').forEach(n=>{n.textContent=text;n.classList.toggle('danger',error);});if(this.still){this.still.positionStatus.textContent=text;this.still.positionStatus.classList.toggle('danger',error);}}
     refresh(){
       if(this.dead)return;
       const state=this.c.state(),body={filepath:state.filepath,branding:copy(this.config()),aspect:state.project.studio_config.render.aspect},key=JSON.stringify(body);
@@ -13,7 +13,7 @@
       const seq=++this.sequence;clearTimeout(this.timer);this.note('Đang cập nhật xem thử');
       this.timer=setTimeout(async()=>{try{const response=await this.c.api('/branding/preview','POST',body);if(this.dead||seq!==this.sequence)return;
         this.layers=response.layers;this.appliedConfig=body.branding;this.install();this.note('');this.draw();
-      }catch(error){if(this.dead||seq!==this.sequence)return;this.layers=[];this.install();this.note(error.message);}},180);
+      }catch(error){if(this.dead||seq!==this.sequence)return;this.layers=[];this.install();this.note(error.message,true);}},180);
     }
     geometry(layer){
       const cfg=this.config()[layer.kind],factor=Math.min(cfg.width/(this.appliedConfig?.[layer.kind].width||cfg.width),1/layer.width,1/layer.height),w=Math.min(1,layer.width*factor),h=Math.min(1,layer.height*factor);
@@ -49,16 +49,83 @@
       });
       this.c.root.querySelectorAll('[data-brand-warning]').forEach(n=>n.textContent=overlaps?'Logo/watermark đang chạm vùng phụ đề. Điều chỉnh vị trí nếu cần.':'');
     }
-    loadStillFrame(force=false){
+    async responseError(response,label){
+      let text='';try{const data=await response.json();if(typeof data.detail==='string')text=data.detail;}catch(_){}
+      return text||`${label} (HTTP ${response.status}).`;
+    }
+    canvasBlob(canvas,type='image/png'){
+      return new Promise((resolve,reject)=>{try{canvas.toBlob(blob=>blob?resolve(blob):reject(Error('Không chuyển đổi được ảnh.')),type,.9);}catch(_){reject(Error('Không đọc được dữ liệu ảnh.'));}});
+    }
+    async uploadLogo(file,report=(text,error)=>this.note(text,error)){
+      if(!file)return;const seq=++this.uploadSequence;
+      const update=(text,error=false)=>{if(!this.dead&&seq===this.uploadSequence)report(text,error);};
+      try{
+        if(!/\.(png|webp|jpe?g)$/i.test(file.name))throw Error('Chọn ảnh PNG, WebP, JPG hoặc JPEG.');
+        if(!file.size||file.size>5*1024*1024)throw Error('Logo cần có dữ liệu và không quá 5 MB.');
+        update('Đang tải logo…');
+        const post=(content,name)=>fetch('/api/studio/branding/logo?'+new URLSearchParams({filepath:this.c.state().filepath,filename:name}),{method:'POST',body:content});
+        let response=await post(file,file.name),error=response.ok?'':await this.responseError(response,'Không tải được logo');
+        // Older running servers accept only PNG/WebP. Keep the open session usable.
+        if(!response.ok&&response.status===400&&/\.jpe?g$/i.test(file.name)&&error.includes('PNG/WebP')){
+          let image;try{image=await createImageBitmap(file);}catch(_){throw Error('Không đọc được ảnh JPG. Hãy chọn một tệp ảnh hợp lệ.');}
+          try{if(image.width>4096||image.height>4096)throw Error('Logo không được quá 4096×4096 pixel.');
+            const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;canvas.getContext('2d').drawImage(image,0,0);
+            const png=await this.canvasBlob(canvas);if(png.size>5*1024*1024)throw Error('Máy chủ đang dùng bản cũ. Hãy khởi động lại ứng dụng để tải ảnh JPG này.');
+            response=await post(png,'logo.png');error=response.ok?'':await this.responseError(response,'Không tải được logo');
+          }finally{image.close();}
+        }
+        if(!response.ok)throw Error(response.status===404?'Máy chủ chưa có chức năng tải logo. Hãy khởi động lại ứng dụng.':error);
+        const result=await response.json();if(!result.image)throw Error('Ứng dụng chưa trả ảnh logo hợp lệ.');if(this.dead||seq!==this.uploadSequence)return;
+        this.c.modify(()=>{const cfg=this.config().logo;cfg.image=result.image;cfg.enabled=true;});
+        update('Đã tải logo. Kéo logo trong khung để đặt vị trí.');this.c.renderProperties();
+      }catch(error){update(error instanceof TypeError?'Không kết nối được ứng dụng. Kiểm tra ứng dụng đang chạy rồi chọn lại ảnh.':error.message,true);}
+    }
+    async browserFrame(at,aspect,signal){
+      const main=this.c.video;let source=main,detached=false;
+      try{
+        if(!(main.readyState>=2&&!main.seeking&&Math.abs(main.currentTime-at)<.1)){
+          source=document.createElement('video');detached=true;source.preload='metadata';source.muted=true;source.playsInline=true;
+          await new Promise((resolve,reject)=>{
+            const target=Math.min(at,Math.max(0,this.c.state().media.duration-.05));
+            const finish=error=>{clearTimeout(timer);source.removeEventListener('loadedmetadata',seek);for(const name of ['loadeddata','seeked','canplay'])source.removeEventListener(name,ready);source.removeEventListener('error',failed);signal.removeEventListener('abort',abort);error?reject(error):resolve();};
+            const ready=()=>{if(source.readyState>=2&&!source.seeking&&Math.abs(source.currentTime-target)<.15)finish();};
+            const seek=()=>{source.currentTime=target;ready();},failed=()=>finish(Error('Trình duyệt không đọc được khung hình tại mốc này.')),abort=()=>finish(new DOMException('Đã hủy','AbortError'));
+            const timer=setTimeout(()=>finish(Error('Lấy ảnh quá lâu. Chọn mốc khác rồi bấm Lấy ảnh.')),8000);
+            source.addEventListener('loadedmetadata',seek);for(const name of ['loadeddata','seeked','canplay'])source.addEventListener(name,ready);source.addEventListener('error',failed);signal.addEventListener('abort',abort,{once:true});
+            if(signal.aborted){abort();return;}
+            source.src=main.currentSrc||main.src||'/api/history/stream/'+this.c.state().filepath.split('/').map(encodeURIComponent).join('/');source.load();
+          });
+        }
+        if(signal.aborted)throw new DOMException('Đã hủy','AbortError');
+        const width=source.videoWidth,height=source.videoHeight;if(!width||!height)throw Error('Chưa đọc được hình ảnh trong video.');
+        const ratio=aspect==='original'?width/height:Number(aspect.split(':')[0])/Number(aspect.split(':')[1]);
+        const w=Math.max(2,Math.floor(Math.min(width,height*ratio)/2)*2),h=Math.max(2,Math.floor(Math.min(height,width/ratio)/2)*2),scale=Math.min(1,1280/Math.max(w,h));
+        const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(w*scale));canvas.height=Math.max(1,Math.round(h*scale));
+        canvas.getContext('2d').drawImage(source,Math.floor((width-w)/2),Math.floor((height-h)/2),w,h,0,0,canvas.width,canvas.height);
+        return await this.canvasBlob(canvas,'image/jpeg');
+      }finally{if(detached){source.pause();source.removeAttribute('src');source.load();}}
+    }
+    async loadStillFrame(force=false){
       const view=this.still;if(!view)return;
       const state=this.c.state(),aspect=state.project.studio_config.render.aspect,key=JSON.stringify([aspect,view.at]);
       if(!force&&view.key===key)return;view.key=key;const seq=++view.sequence;
+      view.abort?.abort();view.abort=new AbortController();
       const ratio=aspect==='original'?state.media.width/state.media.height:Number(aspect.split(':')[0])/Number(aspect.split(':')[1]);
-      view.stage.style.setProperty('--still-ratio',ratio);view.status.textContent='Đang lấy ảnh xem trước…';view.img.hidden=true;
-      const next=new Image();next.className='brandingStillBackground';next.alt='Khung hình làm nền để đặt logo';next.draggable=false;
-      next.onload=()=>{if(this.still!==view||view.sequence!==seq)return;view.img.replaceWith(next);view.img=next;view.status.textContent='Kéo logo/chữ để đặt vị trí; kéo góc ↘ để đổi kích thước.';};
-      next.onerror=()=>{if(this.still===view&&view.sequence===seq)view.status.textContent='Không lấy được ảnh. Chọn mốc khác và bấm Lấy ảnh; bạn vẫn có thể đặt logo trên nền trống.';};
-      next.src='/api/studio/branding/frame?'+new URLSearchParams({filepath:state.filepath,at:view.at,aspect});
+      view.stage.style.setProperty('--still-ratio',ratio);view.status.textContent='Đang lấy ảnh xem trước…';view.status.classList.remove('danger');view.img.hidden=true;
+      let fallback=false,reason='';
+      try{
+        let blob;
+        try{const response=await fetch('/api/studio/branding/frame?'+new URLSearchParams({filepath:state.filepath,at:view.at,aspect}),{cache:'no-store',signal:view.abort.signal});
+          if(!response.ok)throw Error(await this.responseError(response,response.status===404?'Ứng dụng đang chạy bản cũ, chưa có chức năng lấy ảnh':'Không lấy được ảnh nền'));
+          if(!response.headers.get('content-type')?.startsWith('image/'))throw Error('Máy chủ chưa trả về ảnh xem trước hợp lệ.');blob=await response.blob();
+        }catch(error){if(error.name==='AbortError')throw error;reason=error.message;fallback=true;blob=await this.browserFrame(view.at,aspect,view.abort.signal);}
+        if(this.still!==view||view.sequence!==seq)return;
+        const next=new Image(),url=URL.createObjectURL(blob);next.className='brandingStillBackground';next.alt='Khung hình làm nền để đặt logo';next.draggable=false;
+        next.onload=()=>{URL.revokeObjectURL(url);if(this.still!==view||view.sequence!==seq)return;view.img.replaceWith(next);view.img=next;view.status.textContent=fallback?'Đã lấy ảnh trong trình duyệt. Bạn có thể kéo logo trên ảnh.':'Đã lấy ảnh nền. Kéo logo/chữ để đặt vị trí.';};
+        next.onerror=()=>{URL.revokeObjectURL(url);if(this.still===view&&view.sequence===seq){view.status.textContent='Không đọc được ảnh nền. Chọn mốc khác rồi bấm Lấy ảnh.';view.status.classList.add('danger');}};next.src=url;
+      }catch(error){if(this.still!==view||view.sequence!==seq||error.name==='AbortError')return;
+        view.status.textContent=(reason?reason+' · ':'')+error.message+' Logo vẫn đặt được trên nền trống.';view.status.classList.add('danger');
+      }
     }
     openStill(){
       if(this.still)return;this.c.pausePlayback?.();this.c.video.pause();const c=this.c,{el,button}=c,state=c.state();
@@ -70,18 +137,19 @@
       const aspect=el('select');aspect.setAttribute('aria-label','Tỷ lệ khung hình khi xuất');for(const value of ['original','9:16','16:9','1:1']){const opt=el('option',value==='original'?'Tỷ lệ gốc':value);opt.value=value;aspect.append(opt);}aspect.value=state.project.studio_config.render.aspect;
       aspect.onchange=()=>c.modify(()=>c.state().project.studio_config.render.aspect=aspect.value);
       tools.append(timeLabel,button('Lấy ảnh',()=>{const at=Number(time.value);if(!Number.isFinite(at)||at<0||at>state.media.duration)throw Error('Mốc ảnh phải nằm trong thời lượng video');this.still.at=at;this.loadStillFrame(true);}),aspect);
-      const upload=el('input');upload.type='file';upload.accept='.png,.webp';upload.setAttribute('aria-label','Chọn logo cho ảnh preview');upload.onchange=async()=>{try{const file=upload.files[0];if(!file)return;if(file.size>5*1024*1024)throw Error('Logo tối đa 5 MB');const response=await fetch('/api/studio/branding/logo?'+new URLSearchParams({filepath:state.filepath,filename:file.name}),{method:'POST',body:file});const result=await response.json();if(!response.ok)throw Error(result.detail);if(this.dead)return;c.modify(()=>{const cfg=this.config().logo;cfg.image=result.image;cfg.enabled=true;});c.renderProperties();}catch(e){if(this.still)this.still.status.textContent=e.message;}};tools.append(upload);
+      const upload=el('input');upload.type='file';upload.accept='.png,.webp,.jpg,.jpeg';upload.setAttribute('aria-label','Chọn logo cho ảnh preview');
+      upload.onchange=()=>{const file=upload.files[0];upload.value='';this.uploadLogo(file,(text,error)=>{if(this.still){this.still.uploadStatus.textContent=text;this.still.uploadStatus.classList.toggle('danger',error);}else this.note(text,error);});};tools.append(upload);
       const stage=el('div',undefined,'brandingStillStage'),img=el('img');img.className='brandingStillBackground';img.hidden=true;stage.append(img);
-      const status=el('p','Đang lấy ảnh xem trước…');status.setAttribute('role','status');
-      box.append(tools,stage,status,button('Lưu vị trí',async()=>{const saved=await c.save();if(this.still)this.still.status.textContent=saved?'Đã lưu vị trí logo/watermark.':'Còn thay đổi mới chưa lưu.';},'primary'));
-      overlay.append(box);c.root.append(overlay);this.still={overlay,stage,img,status,at:Number(time.value),nodes:[],sequence:0,key:null};this.install();this.draw();this.loadStillFrame();close.focus();
+      const status=el('p','Đang lấy ảnh xem trước…'),uploadStatus=el('p'),positionStatus=el('p');for(const item of [status,uploadStatus,positionStatus])item.setAttribute('role','status');status.dataset.stillStatus='frame';uploadStatus.dataset.stillStatus='upload';positionStatus.dataset.stillStatus='position';
+      box.append(tools,uploadStatus,stage,status,positionStatus,button('Lưu vị trí',async()=>{const saved=await c.save();if(this.still)this.still.positionStatus.textContent=saved?'Đã lưu vị trí logo/watermark.':'Còn thay đổi mới chưa lưu.';},'primary'));
+      overlay.append(box);c.root.append(overlay);this.still={overlay,stage,img,status,uploadStatus,positionStatus,at:Number(time.value),nodes:[],sequence:0,key:null};this.install();this.draw();this.loadStillFrame();close.focus();
     }
-    closeStill(){if(!this.still)return;this.still.overlay.remove();this.still=null;this.dragging=false;this.refresh();this.c.root.querySelector('.brandStillOpen')?.focus();}
+    closeStill(){if(!this.still)return;this.still.abort?.abort();this.still.overlay.remove();this.still=null;this.dragging=false;this.refresh();this.c.root.querySelector('.brandStillOpen')?.focus();}
     editor(){
       const c=this.c,{el,button,field,section}=c,panel=el('div'),state=c.state(),config=this.config();
       panel.append(el('h3','Thương hiệu'),el('p','Mở ảnh preview để kéo và đặt logo/chữ, không cần phát video. Phụ đề luôn nằm trên thương hiệu.','muted'));
       panel.append(button('Mở ảnh preview để đặt logo',()=>this.openStill(),'primary full brandStillOpen'));
-      const status=el('p',this.status);status.dataset.brandStatus='';status.setAttribute('role','status');const warning=el('p','','danger');warning.dataset.brandWarning='';panel.append(status,warning);
+      const status=el('p',this.status);status.dataset.brandStatus='';status.classList.toggle('danger',!!this.statusError);status.setAttribute('role','status');const warning=el('p','','danger');warning.dataset.brandWarning='';panel.append(status,warning);
       const presetPanel=section('Bộ thương hiệu'),select=el('select');select.setAttribute('aria-label','Bộ thương hiệu đã lưu');select.append(el('option','Chọn bộ thương hiệu'));select.options[0].value='';
       for(const preset of this.presets){const option=el('option',preset.name);option.value=preset.id;select.append(option);}
       const name=el('input');name.placeholder='Tên bộ thương hiệu';name.maxLength=80;name.setAttribute('aria-label','Tên bộ thương hiệu');
@@ -93,7 +161,7 @@
         const layer=config[kind],box=section(title),change=(key,value)=>{layer[key]=value;};
         box.append(field('Bật '+title,layer.enabled,'checkbox',v=>{if(kind==='logo'&&v&&!layer.image)throw Error('Tải logo trước');if(kind==='text'&&v&&!layer.content)layer.content='Tên thương hiệu';layer.enabled=v;}));
         if(kind==='logo'){
-          const input=el('input');input.type='file';input.accept='.png,.webp';input.setAttribute('aria-label','Tải logo PNG hoặc WebP');input.onchange=async()=>{try{const file=input.files[0];if(!file)return;if(file.size>5*1024*1024)throw Error('Logo tối đa 5 MB');const response=await fetch('/api/studio/branding/logo?'+new URLSearchParams({filepath:state.filepath,filename:file.name}),{method:'POST',body:file});const result=await response.json();if(!response.ok)throw Error(result.detail);if(this.dead)return;c.modify(()=>{layer.image=result.image;layer.enabled=true;});c.renderProperties();}catch(e){this.note(e.message);}};box.append(input);
+          const input=el('input');input.type='file';input.accept='.png,.webp,.jpg,.jpeg';input.setAttribute('aria-label','Tải logo PNG, WebP hoặc JPG');input.onchange=()=>{const file=input.files[0];input.value='';this.uploadLogo(file);};box.append(input,el('small','PNG, WebP, JPG/JPEG · tối đa 5 MB','muted'));
         }else{
           const textarea=el('textarea');textarea.value=layer.content;textarea.maxLength=200;textarea.setAttribute('aria-label','Nội dung watermark');textarea.onchange=()=>c.modify(()=>layer.content=textarea.value);box.append(textarea);
           box.append(field('Chữ đậm',layer.bold,'checkbox',v=>change('bold',v)),field('Màu watermark',layer.color,'color',v=>change('color',v)),field('Màu viền watermark',layer.outline_color,'color',v=>change('outline_color',v)),field('Cỡ watermark',layer.size,'range',v=>change('size',v),{min:12,max:120,step:1}),field('Độ dày viền watermark',layer.outline,'range',v=>change('outline',v),{min:0,max:10,step:.5}));
