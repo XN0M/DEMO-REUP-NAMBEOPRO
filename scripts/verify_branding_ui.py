@@ -29,7 +29,7 @@ def main():
             return str(p)
         app=FastAPI();app.mount('/static',StaticFiles(directory='web'),name='static')
         @app.get('/')
-        def home():return HTMLResponse('<html><head><link rel="stylesheet" href="/static/studio.css"><script defer src="/static/studio-branding.js"></script><script defer src="/static/studio.js"></script></head><body style="margin:0;background:#101522"><button onclick="openSubtitleStudio(\'sample.mp4\',\'branding\')">Open</button></body></html>')
+        def home():return HTMLResponse('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/studio.css"><link rel="stylesheet" href="/static/app.css"><script defer src="/static/studio-branding.js"></script><script defer src="/static/studio.js"></script></head><body style="margin:0;background:#101522"><button onclick="openSubtitleStudio(\'sample.mp4\',\'branding\')">Open</button></body></html>')
         @app.get('/api/dub/voices')
         def voices():return {'voices':[{'id':'vi-VN-HoaiMyNeural','provider':'edge','name':'Hoài My'}]}
         @app.get('/api/history/stream/{path:path}')

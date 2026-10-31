@@ -48,6 +48,7 @@ def main():
                 browser=playwright.chromium.launch(headless=True)
                 page=browser.new_page(viewport={'width':1440,'height':1000})
                 errors=[];page.on('pageerror',lambda error:errors.append(error.stack))
+                page.route('https://**/*',lambda route:route.abort())
                 page.route('**/api/**',route_api)
                 page.goto(base,wait_until='domcontentloaded')
                 page.evaluate("openSubtitleStudio('landscape.mp4','transcript')")
@@ -57,7 +58,7 @@ def main():
                 def geometry():
                     return page.evaluate('''() => {
                         const rect=s=>document.querySelector('.ns '+s).getBoundingClientRect().toJSON();
-                        return {stage:rect('.stage:not(.hidden)'),viewport:rect('.previewViewport'),timeline:rect('.timeline'),cues:rect('.cueViewport'),player:rect('.playerPanel'),root:rect('.layout')};
+                        return {stage:rect('.stage:not(.hidden)'),viewport:rect('.previewViewport'),timeline:rect('.timeline'),cues:rect('.cueViewport'),player:rect('.playerPanel'),root:rect('.layout'),live:rect('.livePreview'),tabs:[...document.querySelectorAll('.ns .workflowTabs button')].map(e=>e.getBoundingClientRect().toJSON())};
                     }''')
                 def fit(expected_ratio):
                     values=geometry();stage,viewport=values['stage'],values['viewport']
@@ -66,11 +67,21 @@ def main():
                     assert stage['top']>=viewport['top']-1 and stage['bottom']<=viewport['bottom']+1,values
                     assert values['timeline']['bottom']<=values['player']['bottom']+1,values
                     assert values['cues']['height']>=55,values
+                    assert abs((stage['left']+stage['right'])/2-(viewport['left']+viewport['right'])/2)<2,values
+                    assert values['live']['bottom']<=viewport['top']+1,values
+                    assert all(abs(t['top']-values['tabs'][0]['top'])<1 for t in values['tabs']),values
+                    assert page.locator('.ns .previewViewport > :not(.stage)').count()==0
                     return values
                 page.wait_for_timeout(200)
                 values=fit(16/9)
-                assert values['stage']['width']>=600 and values['stage']['height']>=330,values
-                page.screenshot(path=str(runtime/'studio-workspace-desktop.png'),full_page=True)
+                # The extra live-audio row consumes height; retain the existing cue allocation.
+                assert values['stage']['height']>=330-values['live']['height']-6,values
+                page.locator('.ns').screenshot(path=str(runtime/'studio-workspace-desktop.png'))
+                for width,height in [(1920,1080),(2560,1440),(1280,800)]:
+                    page.set_viewport_size({'width':width,'height':height});page.wait_for_timeout(150);fit(16/9)
+                page.set_viewport_size({'width':1440,'height':1000});page.wait_for_timeout(150)
+                page.locator('.ns .desktopPropertyButton').click();page.wait_for_timeout(250);fit(16/9)
+                page.locator('.ns .desktopPropertyButton').click();page.wait_for_timeout(250);fit(16/9)
                 # Splitter presets change real image size, leave a cue viewport, and can reset.
                 initial=values['stage']['height']
                 page.locator('.ns .presetBalance').click();page.wait_for_timeout(100)
@@ -93,7 +104,7 @@ def main():
                 page.wait_for_function("Math.abs(document.getElementById('cutSourcePlayer').currentTime-1.2)<.1")
                 page.get_by_role('button',name='Thêm mốc tại đầu phát',exact=True).click()
                 expect(page.locator('#btnStartCropTrim')).to_have_text('Xuất 2 đoạn')
-                page.screenshot(path=str(runtime/'studio-workspace-cutter.png'),full_page=True)
+                page.locator('.cutEditorDialog').screenshot(path=str(runtime/'studio-workspace-cutter.png'))
                 page.locator('#btnStartCropTrim').click()
                 page.wait_for_function("!cutBusy && cutEl('cutOutputList').children.length===2",timeout=30000)
                 page.get_by_role('button',name='Đóng · Quay lại Studio',exact=True).click()
@@ -109,8 +120,8 @@ def main():
                 page.wait_for_function("document.querySelector('.ns .studioFilename').textContent==='portrait.mp4'")
                 page.wait_for_function("document.querySelector('.ns .previewViewport video').readyState>=2")
                 page.wait_for_timeout(100);portrait=fit(9/16)
-                assert portrait['stage']['height']>=330,portrait
-                page.screenshot(path=str(runtime/'studio-workspace-portrait.png'),full_page=True)
+                assert portrait['stage']['height']>=330-portrait['live']['height']-6,portrait
+                page.locator('.ns').screenshot(path=str(runtime/'studio-workspace-portrait.png'))
                 page.set_viewport_size({'width':1280,'height':800});page.wait_for_timeout(250);fit(9/16)
                 page.set_viewport_size({'width':390,'height':844});page.wait_for_timeout(250);mobile=fit(9/16)
                 assert mobile['stage']['height']>=280,mobile
@@ -119,7 +130,7 @@ def main():
                 expect(page.locator('.ns .cue textarea').first).to_be_visible()
                 page.locator('.ns .mobilePropertyButton').click();expect(page.locator('.ns .properties')).to_be_visible()
                 page.locator('.ns .mobilePropertyButton').click();expect(page.locator('.ns .properties')).not_to_be_visible()
-                page.screenshot(path=str(runtime/'studio-workspace-mobile.png'),full_page=True)
+                page.locator('.ns').screenshot(path=str(runtime/'studio-workspace-mobile.png'))
                 page.locator('.ns .studioControls .studioCut').click();expect(page.locator('.cutEditorDialog')).to_be_visible()
                 page.keyboard.press('Escape');expect(page.locator('.cutEditorDialog')).to_have_count(0)
                 assert not errors,errors
