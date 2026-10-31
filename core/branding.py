@@ -191,3 +191,33 @@ class BrandLibrary:
         if logo:
             with Image.open(asset_path(self.root/'logos',logo)) as image:put_png(project_dir,image.convert('RGBA'))
         return result
+
+
+def preview_frame(video, aspect, at):
+    """Decode one local frame into memory; no render job or temporary media."""
+    import cv2
+    if aspect not in ('original','9:16','16:9','1:1') or not math.isfinite(at) or at < 0:
+        raise ValueError('Mốc ảnh hoặc tỷ lệ không hợp lệ')
+    cap = cv2.VideoCapture(str(video))
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        if fps <= 0 or frames <= 0 or at > frames / fps:
+            raise ValueError('Mốc lấy ảnh nằm ngoài video')
+        cap.set(cv2.CAP_PROP_POS_MSEC, min(at, max(0, (frames-1)/fps))*1000)
+        ok, frame = cap.read()
+    finally:
+        cap.release()
+    if not ok:
+        raise ValueError('Không lấy được ảnh tại mốc này. Hãy chọn mốc khác.')
+    height, width = frame.shape[:2]
+    w, h = dimensions(dict(width=width,height=height),aspect)
+    left, top = (width-w)//2, (height-h)//2
+    frame = frame[top:top+h,left:left+w]
+    scale = min(1,1280/max(w,h))
+    if scale < 1:
+        frame = cv2.resize(frame,(max(1,round(w*scale)),max(1,round(h*scale))),interpolation=cv2.INTER_AREA)
+    ok, content = cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,90])
+    if not ok:
+        raise ValueError('Không tạo được ảnh xem trước')
+    return content.tobytes()

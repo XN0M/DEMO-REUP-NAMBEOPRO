@@ -175,6 +175,13 @@ def main():
                 page.locator('.ns').screenshot(path=str(runtime/'studio-workspace-mobile.png'))
                 page.locator('.ns .studioControls .studioCut').click();expect(page.locator('.cutEditorDialog')).to_be_visible()
                 page.keyboard.press('Escape');expect(page.locator('.cutEditorDialog')).to_have_count(0)
+                # The still-image editor is a nested dialog, not another video player.
+                page.locator('.ns [data-step=branding]').click()
+                page.get_by_role('button',name='Đặt logo trên ảnh',exact=True).click()
+                still=page.locator('.brandingStillDialog');expect(still).to_be_visible()
+                expect(still.locator('.brandingStillBackground')).to_be_visible()
+                assert still.locator('video').count()==0
+                page.keyboard.press('Escape');expect(still).to_have_count(0);expect(page.locator('.ns')).to_be_visible()
                 assert not errors,errors
                 browser.close()
                 print('PASS: mouse/touch drag, persistence, Escape cancel, keyboard resize, typing focus, presets, responsive preview and cutter return')

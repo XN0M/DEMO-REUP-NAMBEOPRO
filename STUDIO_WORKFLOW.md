@@ -28,3 +28,10 @@ Lưu gọn bảo toàn ảnh được dự án/phiên bản/tác vụ tham chi�
 ## Kéo chỉnh bố cục
 
 Giữ chuột hoặc chạm vào vùng **Kéo lên / xuống** giữa video và bảng câu, rồi kéo để đổi diện tích hai vùng. Tỷ lệ hiển thị ngay trên tay nắm; bố cục được nhớ sau khi thả. Nhấn **Esc** trong lúc kéo để hủy, nhấp đúp để về cân đối, hoặc chọn một trong ba bố cục có sẵn. Khi tay nắm được chọn bằng Tab, dùng **↑/↓** để chỉnh, **Shift + ↑/↓** để chỉnh bước lớn, **Home/End** để tới giới hạn. **Khôi phục bố cục** đưa về thiết lập mặc định.
+
+
+## Đặt logo trên ảnh xem trước
+
+Trong bước **Thương hiệu**, bấm **Đặt logo trên ảnh** (hoặc **Mở ảnh preview để đặt logo**). Khung riêng dùng một ảnh lấy từ video, không cần phát hay render video. Chọn mốc giây rồi bấm **Lấy ảnh**, tải logo ngay trong khung, kéo logo/chữ để đặt vị trí, kéo góc ↘ để đổi kích thước và bấm **Lưu vị trí**.
+
+Ảnh được cắt đúng tỷ lệ đầu ra; đổi tỷ lệ trong khung cũng đổi tỷ lệ video khi xuất. Khi chỉnh vị trí, khung hiện tất cả logo/chữ đã bật; khoảng thời gian xuất hiện của chúng vẫn giữ theo thiết lập. Ảnh nền được trả trực tiếp, không tạo file tạm trong dự án.

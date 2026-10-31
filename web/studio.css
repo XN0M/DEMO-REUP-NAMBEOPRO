@@ -11,3 +11,13 @@
 .ns .cue .noDialogue{display:inline-flex;align-items:center;gap:6px;margin:0;color:#cbd5e1;white-space:nowrap}.ns .cue .noDialogue input{margin:0}.ns .cue .status[data-status=skipped]{color:#a7b2cd;border-color:#465064;background:#222a36}
 
 .ns .brandingOverlay{position:absolute;z-index:2;touch-action:none}.ns .brandingOverlay[hidden]{display:none}.ns .brandingOverlay img{width:100%;height:100%;pointer-events:none}.ns .brandingOverlay.editable{outline:1px dashed #fbbf24;cursor:move}.ns .brandingResize{display:none;position:absolute;right:0;bottom:0;background:#111c;color:white;cursor:nwse-resize}.ns .brandingOverlay.editable .brandingResize{display:block}.ns .stage .caption{z-index:3}.ns .stage .mask{z-index:1}
+
+.ns .brandingStillDialog{z-index:10}
+.ns .brandingStillDialog>section{width:min(1140px,100%)}
+.ns .brandingStillDialog .toolbar{gap:10px;justify-content:flex-start}
+.ns .brandingStillDialog h3{margin-right:auto}
+.ns .brandingStillDialog input[type=file]{max-width:260px}
+.ns .brandingStillStage{position:relative;aspect-ratio:var(--still-ratio,1.7778);width:min(100%,calc(58dvh * var(--still-ratio,1.7778)));margin:16px auto;background:repeating-conic-gradient(#293142 0% 25%,#202737 0% 50%) 0 0/24px 24px;overflow:hidden;border:1px solid #526080;border-radius:8px}
+.ns .brandingStillBackground{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none}
+@media(max-width:767px){.ns .brandingStillDialog{padding:6px}.ns .brandingStillDialog{z-index:10}
+.ns .brandingStillDialog>section{padding:12px}.ns .brandingStillDialog input[type=file]{max-width:100%}}

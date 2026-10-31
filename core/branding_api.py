@@ -2,8 +2,8 @@
 import asyncio
 import copy
 from pathlib import Path
-from fastapi import Request, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Request, HTTPException, Query
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from . import branding, studio_store as store, studio_media as media
 
@@ -51,6 +51,13 @@ def attach(router, service, call):
             if not path.is_file():raise FileNotFoundError('Không tìm thấy ảnh thương hiệu')
             return path
         return FileResponse(call(locate),media_type='image/png',headers={'Cache-Control':'private, max-age=31536000, immutable'})
+
+    @router.get('/branding/frame')
+    def frame(filepath: str, at: float = Query(default=0,ge=0,allow_inf_nan=False), aspect: str = 'original'):
+        def process():
+            video = service.resolve(filepath)
+            return branding.preview_frame(video,aspect,at)
+        return Response(content=call(process),media_type='image/jpeg',headers={'Cache-Control':'no-store'})
 
     @router.post('/branding/preview')
     def preview(req: Preview):

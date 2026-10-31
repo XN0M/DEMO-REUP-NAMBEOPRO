@@ -88,3 +88,11 @@ class Branding(unittest.TestCase):
             self.assertEqual(client.delete(path).status_code,200)
             image=self.config['logo']['image']
             self.assertEqual(client.get('/api/studio/branding/image/'+image+'?filepath=source.mp4').status_code,200)
+            with patch.object(branding,'preview_frame',return_value=b'jpeg') as extract:
+                response=client.get('/api/studio/branding/frame?filepath=source.mp4&at=1.5&aspect=9:16')
+                self.assertEqual(response.status_code,200);self.assertEqual(response.content,b'jpeg')
+                self.assertEqual(response.headers['content-type'],'image/jpeg')
+                self.assertEqual(response.headers['cache-control'],'no-store')
+                extract.assert_called_once_with(str(video),'9:16',1.5)
+            self.assertIn(client.get('/api/studio/branding/frame?filepath=source.mp4&at=-1').status_code,(400,422))
+            self.assertEqual(client.get('/api/studio/branding/frame?filepath=../outside.mp4').status_code,400)

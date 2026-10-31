@@ -74,3 +74,15 @@ class BrandingRender(unittest.TestCase):
         shutil.copyfile(branding.asset_path(self.assets,self.key),branding.asset_path(destination,self.key))
         output=self.render();self.assertTrue(media.has_audio(output))
         self.assertGreater(int(self.frame(output,.3)[40,50,2]),90)
+
+    def test_still_preview_crop_and_time_without_files(self):
+        before={str(p) for p in self.root.rglob('*')}
+        for aspect in ('original','9:16','16:9','1:1'):
+            payload=branding.preview_frame(self.video,aspect,1)
+            with Image.open(io.BytesIO(payload)) as image:
+                self.assertEqual(image.format,'JPEG')
+                self.assertEqual(image.size,branding.dimensions(media.probe(self.video),aspect))
+        branding.preview_frame(self.video,'original',3)
+        for aspect,at in [('wrong',0),('original',-1),('original',4),('original',float('nan'))]:
+            with self.assertRaises(ValueError):branding.preview_frame(self.video,aspect,at)
+        self.assertEqual(before,{str(p) for p in self.root.rglob('*')})
