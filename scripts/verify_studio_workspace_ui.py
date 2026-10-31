@@ -46,7 +46,7 @@ def main():
         try:
             with sync_playwright() as playwright:
                 browser=playwright.chromium.launch(headless=True)
-                page=browser.new_page(viewport={'width':1440,'height':1000})
+                page=browser.new_page(viewport={'width':1440,'height':1000},has_touch=True)
                 errors=[];page.on('pageerror',lambda error:errors.append(error.stack))
                 page.route('https://**/*',lambda route:route.abort())
                 page.route('**/api/**',route_api)
@@ -82,6 +82,32 @@ def main():
                 page.set_viewport_size({'width':1440,'height':1000});page.wait_for_timeout(150)
                 page.locator('.ns .desktopPropertyButton').click();page.wait_for_timeout(250);fit(16/9)
                 page.locator('.ns .desktopPropertyButton').click();page.wait_for_timeout(250);fit(16/9)
+                # Dragging changes actual pane sizes and persists only after release.
+                grip=page.get_by_role('separator',name='Thay đổi chiều cao video và bảng câu')
+                def drag(delta, cancel=False):
+                    box=grip.bounding_box();x,y=box['x']+box['width']/2,box['y']+box['height']/2
+                    page.mouse.move(x,y);page.mouse.down();page.mouse.move(x,y+delta,steps=6)
+                    if cancel:page.keyboard.press('Escape')
+                    page.mouse.up();page.wait_for_timeout(100)
+                starting=geometry();drag(-80);smaller=fit(16/9)
+                assert smaller['player']['height']<starting['player']['height']-60,(starting,smaller)
+                assert smaller['cues']['height']>starting['cues']['height']+60,(starting,smaller)
+                drag(30);restored=fit(16/9)
+                assert restored['player']['height']>smaller['player']['height']+20
+                stored=page.evaluate("localStorage.getItem('nambeo.studio.workspace.v2')")
+                drag(60,cancel=True);assert abs(geometry()['player']['height']-restored['player']['height'])<2
+                assert page.evaluate("localStorage.getItem('nambeo.studio.workspace.v2')")==stored
+                assert not page.locator('.ns').evaluate("e=>e.classList.contains('workspaceResizing')")
+                page.reload(wait_until='domcontentloaded');page.evaluate("openSubtitleStudio('landscape.mp4','transcript')")
+                page.wait_for_function("document.querySelector('.ns .previewViewport video').readyState>=2")
+                page.wait_for_timeout(150);assert abs(geometry()['player']['height']-restored['player']['height'])<2
+                grip.focus();before_key=geometry()['player']['height'];page.keyboard.press('ArrowUp');page.wait_for_timeout(50)
+                assert geometry()['player']['height']<before_key-5
+                page.keyboard.press('Shift+ArrowDown');page.wait_for_timeout(50);assert geometry()['player']['height']>before_key+15
+                grip.dblclick();page.wait_for_timeout(100)
+                assert abs(int(grip.get_attribute('aria-valuenow'))-50)<=1
+                page.locator('.ns .resetWorkspace').click();page.wait_for_timeout(100)
+                values=fit(16/9)
                 # Splitter presets change real image size, leave a cue viewport, and can reset.
                 initial=values['stage']['height']
                 page.locator('.ns .presetBalance').click();page.wait_for_timeout(100)
@@ -96,7 +122,11 @@ def main():
                 page.mouse.down();page.mouse.move(box['x']+box['width']*.24/6,box['y']+box['height']*.58);page.mouse.up()
                 expect(page.locator('.ns [data-save-status]')).to_contain_text('Chưa lưu')
                 text=page.locator('.ns .cue textarea').first
-                text.fill('Bản sửa chưa lưu vẫn giữ nguyên');text.press('Tab')
+                text.fill('Bản sửa chưa lưu vẫn giữ nguyên');text.evaluate('e=>e.setSelectionRange(2,8)')
+                drag(-25)
+                expect(text).to_be_focused();expect(text).to_have_value('Bản sửa chưa lưu vẫn giữ nguyên')
+                assert text.evaluate('e=>[e.selectionStart,e.selectionEnd]')==[2,8]
+                text.press('Tab')
                 page.evaluate("document.querySelector('.ns .previewViewport video').currentTime=1.2")
                 page.locator('.ns .previewTop .studioCut').click()
                 expect(page.locator('.cutEditorDialog')).to_be_visible()
@@ -114,6 +144,8 @@ def main():
                 assert not page.locator('.ns').evaluate('e=>e.inert')
                 page.wait_for_timeout(50)
                 assert page.locator('.ns .previewTop .studioCut').evaluate('e=>e===document.activeElement')
+                # Restore the preset after the deliberate editing-time drag.
+                page.locator('.ns .resetWorkspace').click();page.wait_for_timeout(100)
                 # Portrait and smaller desktop screen use the same fitting calculation.
                 page.on('dialog',lambda dialog:dialog.accept())
                 page.evaluate("openSubtitleStudio('portrait.mp4','transcript')")
@@ -125,6 +157,16 @@ def main():
                 page.set_viewport_size({'width':1280,'height':800});page.wait_for_timeout(250);fit(9/16)
                 page.set_viewport_size({'width':390,'height':844});page.wait_for_timeout(250);mobile=fit(9/16)
                 assert mobile['stage']['height']>=280,mobile
+                # Real touch input exercises pointer capture and touch-action on the handle.
+                grip.scroll_into_view_if_needed();box=grip.bounding_box();x,y=box['x']+box['width']/2,box['y']+box['height']/2
+                before_touch=geometry()['player']['height']
+                now=int(grip.get_attribute('aria-valuenow'));maximum=int(grip.get_attribute('aria-valuemax'));delta=25 if maximum-now>3 else -25
+                client=page.context.new_cdp_session(page)
+                client.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
+                client.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':x,'y':y+delta}]})
+                client.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]});page.wait_for_timeout(100)
+                assert abs(geometry()['player']['height']-before_touch)>10
+                assert not page.locator('.ns').evaluate("e=>e.classList.contains('workspaceResizing')")
                 assert page.locator('.ns').evaluate('e=>e.scrollWidth<=e.clientWidth+1')
                 expect(page.locator('.ns .cueHeading')).to_be_visible()
                 expect(page.locator('.ns .cue textarea').first).to_be_visible()
@@ -135,7 +177,7 @@ def main():
                 page.keyboard.press('Escape');expect(page.locator('.cutEditorDialog')).to_have_count(0)
                 assert not errors,errors
                 browser.close()
-                print('PASS: large landscape/portrait previews, splitter presets, compact cue editing, desktop/mobile cutter, unsaved edits and Escape return')
+                print('PASS: mouse/touch drag, persistence, Escape cancel, keyboard resize, typing focus, presets, responsive preview and cutter return')
         finally:
             service.should_exit=True;thread.join(timeout=5)
             server.current_download_dir=old_root;server.studio_service.database=old_db

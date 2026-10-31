@@ -23,3 +23,8 @@ Bộ thương hiệu có tên dùng lại cho nhiều video; áp dụng bộ ch�
 Preview và bản xuất dùng chung ảnh watermark chữ, font và hình học. Thứ tự lớp: video → vùng che chữ gốc → logo → watermark chữ → phụ đề mới. Giao diện cảnh báo khi vùng thương hiệu và phụ đề đang hiển thị chạm nhau. Luôn render thử để duyệt chất lượng trước khi xuất.
 
 Lưu gọn bảo toàn ảnh được dự án/phiên bản/tác vụ tham chiếu; chỉ giữ thành phẩm sẽ dọn tài nguyên riêng của dự án và giữ nguyên thư viện bộ thương hiệu.
+
+
+## Kéo chỉnh bố cục
+
+Giữ chuột hoặc chạm vào vùng **Kéo lên / xuống** giữa video và bảng câu, rồi kéo để đổi diện tích hai vùng. Tỷ lệ hiển thị ngay trên tay nắm; bố cục được nhớ sau khi thả. Nhấn **Esc** trong lúc kéo để hủy, nhấp đúp để về cân đối, hoặc chọn một trong ba bố cục có sẵn. Khi tay nắm được chọn bằng Tab, dùng **↑/↓** để chỉnh, **Shift + ↑/↓** để chỉnh bước lớn, **Home/End** để tới giới hạn. **Khôi phục bố cục** đưa về thiết lập mặc định.

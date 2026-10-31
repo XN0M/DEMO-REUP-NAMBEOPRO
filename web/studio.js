@@ -40,8 +40,8 @@
     for(const event of ['play','pause','seeking','seeked','ratechange','volumechange','ended'])video.addEventListener(event,()=>{if(event==='play')audioPlayer?.pause();liveTick();});
   }
   const workspaceKey='nambeo.studio.workspace.v2';
-  let workspace={ratio:.72,properties:false}, workspaceResize=null, workspaceFrame=0, splitter=null, editorPane=null, playerPane=null;
-  try{const savedWorkspace=JSON.parse(localStorage.getItem(workspaceKey)||'{}');if(Number.isFinite(savedWorkspace.ratio))workspace.ratio=Math.max(.15,Math.min(.85,savedWorkspace.ratio));workspace.properties=savedWorkspace.properties===true;}catch(_){}
+  let workspace={ratio:.72,properties:false}, workspaceResize=null, workspaceFrame=0, splitter=null, editorPane=null, playerPane=null, cancelWorkspaceDrag=null;
+  try{const savedWorkspace=JSON.parse(localStorage.getItem(workspaceKey)||'{}');if(Number.isFinite(savedWorkspace.ratio))workspace.ratio=Math.max(.05,Math.min(.95,savedWorkspace.ratio));workspace.properties=savedWorkspace.properties===true;}catch(_){}
   function saveWorkspace(){try{localStorage.setItem(workspaceKey,JSON.stringify(workspace));}catch(_){}}
   const workspaceHeight=()=>innerWidth<768?Math.max(480,innerHeight-120):(editorPane?.clientHeight||0);
   function refreshWorkspace(){
@@ -51,7 +51,7 @@
     const selectedHeight=root.querySelector('.cueSelection:not(.hidden)')?.offsetHeight||0;
     const historyHeight=root.querySelector('.jobHistory')?.offsetHeight||0;
     const cueMinimum=compact?0:Math.min(available*.45,headingHeight+selectedHeight+historyHeight+(state.project.segments.length?110:60));
-    const max=Math.max(0,available-(splitter?.offsetHeight||0)-cueMinimum);
+    const max=Math.max(0,available-(splitter?.closest('.studioDivider')?.offsetHeight||0)-cueMinimum);
     const summary=playerPane.querySelector('summary'), panelStyle=getComputedStyle(playerPane);
     const insets=parseFloat(panelStyle.paddingTop)+parseFloat(panelStyle.paddingBottom);
     const compactControls=(playerPane.querySelector('.previewTop')?.offsetHeight||0)+(playerPane.querySelector('.livePreview:not(.hidden)')?.offsetHeight||0)+(playerPane.querySelector('.previewTools')?.offsetHeight||0);
@@ -61,7 +61,9 @@
     playerPane.style.height=Math.round(height)+'px';
     const panel=playerPane.querySelector('.previewWorkspace');
     if(panel)panel.style.height=playerPane.open?Math.max(0,Math.floor(height-summary.offsetHeight-insets))+'px':'0px';
-    splitter?.setAttribute('aria-disabled','false');
+    splitter?.setAttribute('aria-disabled',String(max-min<1));
+    const readout=splitter?.querySelector('.studioDividerValue');if(readout){const percent=Math.round(100*height/Math.max(1,available));readout.textContent=`Video ${percent}% · Bảng câu ${100-percent}%`;}
+    splitter?.setAttribute('aria-valuetext',readout?.textContent||'');
     splitter?.setAttribute('aria-valuenow',String(Math.round(100*height/Math.max(1,available))));
     splitter?.setAttribute('aria-valuemin',String(Math.round(100*min/Math.max(1,available))));
     splitter?.setAttribute('aria-valuemax',String(Math.round(100*max/Math.max(1,available))));
@@ -380,21 +382,45 @@ const row=el('article',undefined,'cue');row.dataset.id=seg.id;row.dataset.index=
     toolbar.append(button('Chỉnh lời đọc tự nhiên',()=>launch('naturalize',[...selected]),'cueVoiceAction'));
     const history=el('details',undefined,'jobHistory sectionTitle');const jobPanel=el('div',undefined,'job hidden');jobPanel.setAttribute('aria-live','polite');root.insertBefore(jobPanel,layout);const cueViewport=el('div',undefined,'cueViewport');cueViewport.append(el('div',undefined,'list'));cueViewport.addEventListener('scroll',requestVirtual,{passive:true});cueViewport.addEventListener('wheel',()=>lastManualScroll=Date.now(),{passive:true});cueViewport.addEventListener('touchmove',()=>lastManualScroll=Date.now(),{passive:true});
     const editor=el('div',undefined,'studioEditor'),properties=layout.querySelector('.properties');properties.setAttribute('aria-label','Thuộc tính bước hiện tại');
-    const divider=el('div',undefined,'studioDivider'),dividerActions=el('div',undefined,'studioDividerActions'),grip=el('div','⋮⋮','studioDividerGrip');
+    const divider=el('div',undefined,'studioDivider'),dividerActions=el('div',undefined,'studioDividerActions'),grip=el('div',undefined,'studioDividerGrip');
+    const dragIcon=el('span','⋮⋮','studioDividerIcon');dragIcon.setAttribute('aria-hidden','true');grip.append(dragIcon,el('span','Kéo lên / xuống'),el('span','','studioDividerValue'));
     const collapsePreview=button('Thu gọn video',()=>{player.open=!player.open;collapsePreview.textContent=player.open?'Thu gọn video':'Hiện video';refreshWorkspace();},'collapsePreview');
     const presetVideo=button('🎬 Ưu tiên Video',()=>{player.open=true;collapsePreview.textContent='Thu gọn video';setPreviewRatio(.80);},'presetVideo');
     const presetBalance=button('⚖ Cân đối 50/50',()=>{player.open=true;collapsePreview.textContent='Thu gọn video';setPreviewRatio(.50);},'presetBalance');
     const presetCues=button('📝 Ưu tiên Bảng câu',()=>{player.open=true;collapsePreview.textContent='Thu gọn video';setPreviewRatio(.30);},'presetCues');
     const resetLayout=button('Khôi phục bố cục',()=>{player.open=true;collapsePreview.textContent='Thu gọn video';workspace.properties=false;root.classList.remove('propertiesCollapsed');desktopProperties.textContent='Ẩn thuộc tính';desktopProperties.setAttribute('aria-expanded','true');setPreviewRatio(.72);},'resetWorkspace');
-    dividerActions.append(collapsePreview,presetVideo,presetBalance,presetCues,resetLayout);divider.append(dividerActions,grip);divider.setAttribute('role','separator');divider.setAttribute('aria-label','Thay đổi chiều cao video và bảng câu');divider.setAttribute('aria-orientation','horizontal');divider.setAttribute('tabindex','0');divider.title='Kéo để đổi chiều cao · Dùng phím ↑ ↓ để điều chỉnh';
-    divider.onpointerdown=event=>{if((event.target!==divider&&event.target!==grip)||divider.getAttribute('aria-disabled')==='true')return;const active=document.activeElement,typing=active?.matches?.('textarea,input:not([type=checkbox])')&&editor.contains(active)?{node:active,start:active.selectionStart,end:active.selectionEnd}:null;event.preventDefault();if(!player.open)player.open=true;const initial=event.clientY,starting=player.getBoundingClientRect().height;divider.setPointerCapture(event.pointerId);divider.onpointermove=move=>setPreviewRatio((starting+move.clientY-initial)/Math.max(1,workspaceHeight()),false);divider.onpointerup=()=>{divider.onpointermove=null;divider.onpointerup=null;saveWorkspace();if(typing?.node.isConnected){typing.node.focus({preventScroll:true});if(typing.start!==null&&typing.end!==null)typing.node.setSelectionRange(typing.start,typing.end);}};divider.onpointercancel=divider.onpointerup;};
-    divider.ondblclick=event=>{if(event.target===divider||event.target===grip)presetBalance.click();};
-    divider.onkeydown=event=>{if(divider.getAttribute('aria-disabled')==='true')return;const step=(event.shiftKey?40:10)/Math.max(1,workspaceHeight());if(['ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();if(!player.open)player.open=true;setPreviewRatio(event.key==='Home'?.15:event.key==='End'?.85:workspace.ratio+(event.key==='ArrowUp'?-step:step));}};
-    editor.append(player,divider,cueHeading,toolbar,cueViewport,history);layout.replaceChildren(editor,properties);editorPane=editor;playerPane=player;splitter=divider;
+    dividerActions.append(collapsePreview,presetVideo,presetBalance,presetCues,resetLayout);divider.append(dividerActions,grip);
+    grip.setAttribute('role','separator');grip.setAttribute('aria-label','Thay đổi chiều cao video và bảng câu');grip.setAttribute('aria-orientation','horizontal');grip.setAttribute('tabindex','0');grip.title='Kéo lên/xuống để chỉnh bố cục · Nhấp đúp: cân đối · ↑ ↓: chỉnh · Shift: bước lớn · Esc: hủy kéo';
+    grip.onpointerdown=event=>{
+      if(event.button!==0||event.isPrimary===false||grip.getAttribute('aria-disabled')==='true'||cancelWorkspaceDrag)return;
+      const active=document.activeElement,typing=active?.matches?.('textarea,input:not([type=checkbox])')&&editor.contains(active)?{node:active,start:active.selectionStart,end:active.selectionEnd}:null;
+      event.preventDefault();if(!player.open){player.open=true;refreshWorkspace();}
+      const initial=event.clientY,starting=player.getBoundingClientRect().height,original=workspace.ratio;
+      root.classList.add('workspaceResizing');grip.setPointerCapture(event.pointerId);if(!typing)grip.focus({preventScroll:true});
+      const finish=cancel=>{
+        if(!cancelWorkspaceDrag)return;cancelWorkspaceDrag=null;
+        grip.onpointermove=null;grip.onpointerup=null;grip.onpointercancel=null;grip.onlostpointercapture=null;window.removeEventListener('keydown',escape,true);root.classList.remove('workspaceResizing');
+        if(cancel)setPreviewRatio(original,false);else{workspace.ratio=player.getBoundingClientRect().height/Math.max(1,workspaceHeight());saveWorkspace();}
+        if(grip.hasPointerCapture(event.pointerId))grip.releasePointerCapture(event.pointerId);
+        if(typing?.node.isConnected){typing.node.focus({preventScroll:true});if(typing.start!==null&&typing.end!==null)typing.node.setSelectionRange(typing.start,typing.end);}
+      };
+      const escape=key=>{if(key.key==='Escape'){key.preventDefault();key.stopImmediatePropagation();finish(true);}};
+      cancelWorkspaceDrag=()=>finish(true);window.addEventListener('keydown',escape,true);
+      grip.onpointermove=move=>{if(move.pointerId===event.pointerId)setPreviewRatio((starting+move.clientY-initial)/Math.max(1,workspaceHeight()),false);};
+      grip.onpointerup=up=>{if(up.pointerId===event.pointerId)finish(false);};grip.onpointercancel=()=>finish(true);grip.onlostpointercapture=()=>finish(false);
+    };
+    grip.ondblclick=()=>presetBalance.click();
+    grip.onkeydown=event=>{
+      if(grip.getAttribute('aria-disabled')==='true'||!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
+      event.preventDefault();if(!player.open){player.open=true;refreshWorkspace();}
+      const available=Math.max(1,workspaceHeight()),step=(event.shiftKey?40:10)/available,current=player.getBoundingClientRect().height/available;
+      setPreviewRatio(event.key==='Home'?Number(grip.getAttribute('aria-valuemin'))/100:event.key==='End'?Number(grip.getAttribute('aria-valuemax'))/100:current+(event.key==='ArrowUp'?-step:step));
+    };
+    editor.append(player,divider,cueHeading,toolbar,cueViewport,history);layout.replaceChildren(editor,properties);editorPane=editor;playerPane=player;splitter=grip;
     document.body.append(root);setupLive();brandingView=new window.NambeoBranding({root,stage:sourceStage,video,caption,state:()=>state,editing:()=>propertyTab==='branding',api,el,button,field,section,modify,remember,changed,renderProperties,save,accept});document.body.style.overflow='hidden';workspaceResize=new ResizeObserver(()=>refreshWorkspace());workspaceResize.observe(editor);workspaceResize.observe(cueHeading);workspaceResize.observe(toolbar);workspaceResize.observe(history);workspaceResize.observe(previewViewport);cueResize=new ResizeObserver(entries=>{let changedHeight=false;for(const entry of entries){const id=entry.target.dataset.id,height=entry.borderBoxSize?.[0]?.blockSize||entry.target.getBoundingClientRect().height;if(Math.abs((cueHeights.get(id)||0)-height)>2){cueHeights.set(id,height);changedHeight=true;}}if(changedHeight)requestVirtual();});renderProperties();renderCues();gestures();refreshWorkspace();renderActions();
     const jobs=await api('/jobs?'+new URLSearchParams({filepath}));if(!root||token!==session)return;await refreshJobs(jobs.jobs);const pending=jobs.jobs.find(j=>!terminal(j));if(pending){busy=true;poll(pending,token).catch(e=>message(e.message,true));}else if(jobs.jobs[0])showJob(jobs.jobs[0]);const latestRender=jobs.jobs.find(j=>j.status==='completed'&&j.artifact&&j.kind==='export'&&j.revision===state.project.revision)||jobs.jobs.find(j=>j.status==='completed'&&j.artifact&&j.kind==='preview'&&j.revision===state.project.revision);if(latestRender)showRendered(latestRender);const previousWave=jobs.jobs.find(j=>j.kind==='waveform'&&j.status==='completed'&&j.peaks);if(previousWave){peaks=previousWave.peaks;draw();}renderActions();
     if(!state.project.segments.length)message('Bắt đầu bằng “Tạo bản thoại”. Bạn cũng có thể xuất video với âm thanh gốc nếu không cần lời thoại.');}
-  function close(){brandingView?.close();brandingView=null;stopLive(true);liveDub=false;liveSkip=false;++session;if(jobTimer)clearTimeout(jobTimer);if(virtualFrame)cancelAnimationFrame(virtualFrame);if(workspaceFrame)cancelAnimationFrame(workspaceFrame);workspaceFrame=0;cueResize?.disconnect();workspaceResize?.disconnect();workspaceResize=null;editorPane=null;playerPane=null;splitter=null;cueRows.clear();if(audioPlayer)audioPlayer.pause();if(video){video.pause();video.removeAttribute('src');video.load();}if(renderedVideo){renderedVideo.pause();renderedVideo.removeAttribute('src');renderedVideo.load();}currentRenderedJob=null;root?._headerSizer?.disconnect();root?.remove();root=null;document.body.style.overflow='';busy=false;}
+  function close(){cancelWorkspaceDrag?.();brandingView?.close();brandingView=null;stopLive(true);liveDub=false;liveSkip=false;++session;if(jobTimer)clearTimeout(jobTimer);if(virtualFrame)cancelAnimationFrame(virtualFrame);if(workspaceFrame)cancelAnimationFrame(workspaceFrame);workspaceFrame=0;cueResize?.disconnect();workspaceResize?.disconnect();workspaceResize=null;editorPane=null;playerPane=null;splitter=null;cueRows.clear();if(audioPlayer)audioPlayer.pause();if(video){video.pause();video.removeAttribute('src');video.load();}if(renderedVideo){renderedVideo.pause();renderedVideo.removeAttribute('src');renderedVideo.load();}currentRenderedJob=null;root?._headerSizer?.disconnect();root?.remove();root=null;document.body.style.overflow='';busy=false;}
   window.addEventListener('nambeo-voices-changed',event=>{voices=event.detail;if(root&&state)renderProperties();});
   window.openSubtitleStudio=(filepath,step)=>open(filepath,step).catch(error=>{if(root)message(error.message,true);else window.showToast?.(error.message,true);});
   addEventListener('beforeunload',event=>{if(root&&dirty){event.preventDefault();event.returnValue='';}});
