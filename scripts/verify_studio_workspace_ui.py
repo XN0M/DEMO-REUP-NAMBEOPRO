@@ -50,6 +50,7 @@ def main():
                 errors=[];page.on('pageerror',lambda error:errors.append(error.stack))
                 page.route('https://**/*',lambda route:route.abort())
                 page.route('**/api/**',route_api)
+                page.add_init_script("localStorage.setItem('nambeo.studio.layout.v1','legacy')")
                 page.goto(base,wait_until='domcontentloaded')
                 page.evaluate("openSubtitleStudio('landscape.mp4','transcript')")
                 expect(page.locator('.ns .cue textarea').first).to_be_visible()

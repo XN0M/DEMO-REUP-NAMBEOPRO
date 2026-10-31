@@ -1,6 +1,13 @@
-/* Voice workspace only. Move the existing UI, never clone project controls or media. */
+/* Shared Studio workspace. Move the existing UI, never clone controls or media. */
 (() => {
-  const preferenceKey = 'nambeo.studio.voice.quad.v1';
+  const preferenceKey = 'nambeo.studio.layout.v1';
+  const steps = {
+    transcript: ['② Bản thoại & bản dịch', '④ Nhận diện & dịch'],
+    subtitles: ['② Nội dung phụ đề', '④ Kiểu chữ & phụ đề'],
+    branding: ['② Bản thoại & phụ đề', '④ Logo & watermark'],
+    voice: ['② Bản thoại & lời đọc', '④ Cấu hình giọng'],
+    export: ['② Kiểm tra câu & lời đọc', '④ Cấu hình xuất video'],
+  };
   const make = (tag, cls, text) => {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
@@ -13,7 +20,7 @@
     else parent.insertBefore(node, before);
   };
   const visible = node => node?.isConnected && node.getClientRects().length && !node.closest('.hidden');
-  class VoiceQuad {
+  class StudioQuad {
     constructor({root, layout, controls, groups, resize, renderActions}) {
       Object.assign(this, {root, layout, controls, resize, renderActions});
       this.controlsAnchor = document.createComment('studio controls original slot');
@@ -22,8 +29,13 @@
       this.step = '';
       this.enabled = true;
       this.frames = new Set();
-      try { this.enabled = localStorage.getItem(preferenceKey) !== 'legacy'; } catch (_) {}
-      this.grid = make('div', 'voiceQuad hidden');
+      try {
+        const saved = localStorage.getItem(preferenceKey);
+        const value = ['quad', 'legacy'].includes(saved) ? saved : localStorage.getItem('nambeo.studio.voice.quad.v1');
+        this.enabled = value !== 'legacy';
+        if (!['quad', 'legacy'].includes(saved)) localStorage.setItem(preferenceKey, this.enabled ? 'quad' : 'legacy');
+      } catch (_) {}
+      this.grid = make('div', 'studioQuad hidden');
       layout.append(this.grid);
       const titles = ['① Video / xem thử', '② Bản thoại & lời đọc', '③ Timeline & tác vụ', '④ Cấu hình giọng'];
       this.cards = groups.map((nodes, index) => {
@@ -41,18 +53,18 @@
         const body = make('div', 'quadBody');
         header.append(title, expand);card.append(header, body);this.grid.append(card);
         const slots = nodes.map(node => {
-          const anchor = document.createComment('voice workspace original slot');
+          const anchor = document.createComment('studio workspace original slot');
           node.before(anchor);
           return {node, anchor};
         });
         body.addEventListener('focusout', event => {
           if (event.target.matches('input,textarea,select')) this.lastFocus = this.captureFocus(event.target);
         });
-        return {card, body, expand, title: titles[index], slots};
+        return {card, body, expand, heading: title, title: titles[index], slots};
       });
       this.toggle = make('div', 'quadModeSwitch');
       this.toggle.setAttribute('role', 'group');
-      this.toggle.setAttribute('aria-label', 'Bố cục Lồng tiếng');
+      this.toggle.setAttribute('aria-label', 'Bố cục Studio');
       this.toggle.append(make('span', '', 'Bố cục:'));
       this.modeButtons = ['4 ô', 'Bố cục cũ'].map((text, index) => {
         const b = make('button', '', text);b.type = 'button';
@@ -67,24 +79,31 @@
       this.observer.observe(this.grid);
     }
     attachToggle(target) {
-      if (this.step !== 'voice') return;
+      if (!steps[this.step]) return;
       this.modeButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(this.enabled === (i === 0))));
       target.append(this.toggle);
     }
     sync(step) {
+      if (step !== this.step) this.collapse();
       this.step = step;
-      const active = step === 'voice' && this.enabled;
-      if (active === this.active) return;
+      if (steps[step]) {
+        [1, 3].forEach((index, i) => {
+          const c = this.cards[index];c.title = steps[step][i];c.heading.textContent = c.title;
+          c.expand.setAttribute('aria-label', 'Mở rộng ' + c.title.slice(2));
+        });
+      }
+      const active = !!steps[step] && this.enabled;
+      if (active === this.active) {this.resize();return;}
       this.collapse();
       const view = this.capture(this.grid.contains(document.activeElement) ? document.activeElement : null);
       if (active) {
-        this.root.classList.add('quadVoice');
+        this.root.classList.add('quadWorkspace');
         this.grid.classList.remove('hidden');
         this.cards.forEach(c => c.slots.forEach(({node}) => move(node, c.body)));
       } else {
         this.cards.forEach(c => c.slots.forEach(({node, anchor}) => move(node, anchor.parentNode, anchor.nextSibling)));
         this.grid.classList.add('hidden');
-        this.root.classList.remove('quadVoice');
+        this.root.classList.remove('quadWorkspace');
       }
       this.active = active;
       this.restore(view);
@@ -181,5 +200,5 @@
       this.grid.remove();this.toggle.remove();
     }
   }
-  window.NambeoVoiceQuad = VoiceQuad;
+  window.NambeoStudioQuad = StudioQuad;
 })();
