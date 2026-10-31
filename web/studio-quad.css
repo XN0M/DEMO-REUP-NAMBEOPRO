@@ -1,0 +1,69 @@
+/* Scoped to the voice-layout trial; legacy sizing/preferences stay independent. */
+.ns.quadVoice .layout{display:block;padding:10px 14px;transition:none}
+.ns.quadVoice .layout>.studioEditor,.ns.quadVoice .studioDivider,.ns.quadVoice .desktopPropertyButton,.ns.quadVoice .mobilePropertyButton{display:none!important}
+.ns .quadModeSwitch{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:14px}
+.ns .quadModeSwitch button{font-size:14px;white-space:nowrap}
+.ns .quadModeSwitch [aria-pressed=true]{background:#342554;border-color:#9b78ed;color:#fff}
+.ns.quadVoice .stepActions button,.ns.quadVoice .workflowTabs button{font-size:14px}
+.ns .voiceQuad{display:grid;grid-template-columns:minmax(0,55fr) minmax(0,45fr);grid-template-rows:minmax(0,55fr) minmax(0,45fr);gap:12px;height:100%;min-height:0}
+.ns .quadCard{display:flex;flex-direction:column;min-width:0;min-height:0;padding:0;overflow:hidden;border:1px solid #293244;border-radius:12px;background:#0d1421}
+.ns .quadHeader,.ns .quadDialogHeader{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:12px;min-width:0;padding:8px 12px;border-bottom:1px solid #293244;background:#131b2b}
+.ns .quadHeader h3,.ns .quadDialogHeader h3{font-size:16px;margin:0;line-height:1.4;overflow-wrap:anywhere}
+.ns .quadHeader button,.ns .quadDialogHeader button{white-space:nowrap;flex:none}
+.ns .quadBody{display:flex;flex-direction:column;flex:1 1 0;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;font-size:14px}
+.ns.quadVoice :is(.quadCard,.quadDialog) :is(button,input,select,summary,label,small,.muted,.status,.timelineHint,.cueTiming,.playbackClock){font-size:14px}
+.ns.quadVoice .cue label>span,.ns.quadVoice .livePreview,.ns.quadVoice .jobTitle,.ns.quadVoice .jobBrief{font-size:14px}
+.ns.quadVoice :is(.quadCard,.quadDialog) textarea{font-size:16px;line-height:1.55;min-height:90px}
+.ns.quadVoice :is(.quadCard,.quadDialog) :is(input,select,textarea){max-width:100%;min-width:0;box-sizing:border-box}
+.ns.quadVoice :is(.quadCard,.quadDialog) .toolbar{flex-wrap:wrap;min-width:0}
+.ns .quadCard1>.quadBody,.ns .quadDialog[data-quad-panel="1"] .quadBody{overflow:hidden;padding:8px;gap:4px}
+.ns.quadVoice .previewMedia{align-items:stretch;justify-content:flex-start;flex:1 1 0;min-height:0}
+.ns.quadVoice .previewTop{flex:none;flex-wrap:wrap;gap:4px}
+.ns.quadVoice .previewTop .studioCut{display:none}
+.ns.quadVoice .livePreview{flex:none;justify-content:flex-start;padding:3px 0;margin:0 0 5px}
+.ns.quadVoice .previewViewport{flex:1 1 0;min-height:0;min-width:0}
+.ns.quadVoice .playbackStatus{flex:none;margin:0;overflow-wrap:anywhere}
+.ns .quadCard2>.quadBody,.ns .quadDialog[data-quad-panel="2"] .quadBody{overflow:hidden}
+.ns.quadVoice .cueHeading{display:flex;flex:none;padding:8px 10px;gap:6px;flex-wrap:wrap}
+.ns.quadVoice .cueHeading h3{width:100%;margin:0;font-size:14px}
+.ns.quadVoice .cueHeading input[type=search]{flex:1;min-width:100px;width:160px}
+.ns.quadVoice .cueSelection{flex:none;margin:5px 10px;max-height:120px;overflow:auto}
+.ns.quadVoice .cueSelection:not(.hidden){display:flex}
+.ns.quadVoice .cueViewport{flex:1 1 0;min-height:0;height:auto;padding:8px 10px 16px;overflow:auto}
+.ns.quadVoice .list .cue{padding:10px;overflow-wrap:anywhere}
+.ns.quadVoice .cue .cueTime{flex-wrap:nowrap}
+.ns.quadVoice .cue .cueTime input{width:70px}
+.ns.quadVoice .quadCard3>.quadBody,.ns.quadVoice .quadDialog[data-quad-panel="3"] .quadBody{display:block;padding:10px}
+.ns.quadVoice .timeline{flex:none;min-width:0;margin:0 0 6px}
+.ns.quadVoice .timeline canvas{height:84px;min-width:0}
+.ns.quadVoice .quadBody>.job{position:static;max-height:none;margin:8px 0;padding:10px;overflow:visible;overflow-wrap:anywhere}
+.ns.quadVoice .quadBody>.jobHistory{margin:8px 0;padding:8px 0;border-top:1px solid #293244}
+.ns.quadVoice .jobTitle,.ns.quadVoice .jobBrief{display:block}
+.ns.quadVoice .jobBody{max-height:none}
+.ns.quadVoice .quadCard4>.quadBody,.ns.quadVoice .quadDialog[data-quad-panel="4"] .quadBody{overflow:hidden}
+.ns.quadVoice .properties{display:block!important;position:static;flex:1 1 0;width:100%;height:100%;max-height:none;min-height:0;overflow:auto;padding:10px;border:0;border-radius:0;box-sizing:border-box}
+.ns.quadVoice .properties :is(label,.voiceControl,.voicePicker){min-width:0;max-width:100%;overflow-wrap:anywhere}
+.ns.quadVoice .voiceStats{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.ns.quadVoice .voiceNativeSelect{display:none}
+.ns.quadVoice .voiceControl>span{display:block;margin:8px 0;font-size:14px}
+.ns.quadVoice .voicePicker summary :is(strong,small),.ns.quadVoice .voicePickerItem :is(strong,small){display:block;margin:3px 0}
+.ns.quadVoice .voicePickerList{max-height:260px;overflow:auto}
+.ns.quadVoice .voicePickerItem{display:block;width:100%;text-align:left;margin:6px 0}
+.ns .quadPlaceholder{display:flex;align-items:center;justify-content:center;flex:1;min-height:0;padding:16px;text-align:center;color:#94a3b8;font-size:14px}
+.ns .quadDialog{z-index:4;padding:0;align-items:center;justify-content:center;background:rgba(0,0,0,.76)}
+.ns .quadDialog>section{display:flex;flex-direction:column;width:94vw;height:90dvh;max-width:none;max-height:none;padding:0;overflow:hidden}
+.ns .quadDialogHeader{padding:10px 16px;flex-wrap:wrap}
+.ns .quadDialogHeader .studioControls{margin-left:auto}
+.ns .quadDialog[data-quad-panel="2"] textarea{font-size:18px;min-height:112px}
+.ns .quadDialog .popupError{flex:none;margin:8px 12px}
+@media(max-width:1023px),(max-height:699px){
+  .ns.quadVoice{overflow-y:auto}
+  .ns.quadVoice .layout{flex:none;overflow:visible;min-height:0}
+  .ns .voiceQuad{height:auto;display:flex;flex-direction:column;gap:12px}
+  .ns .quadCard{height:460px;flex:none}
+  .ns .quadCard1{height:500px}
+  .ns .quadCard2{height:580px}
+  .ns .quadCard3{height:340px}
+  .ns.quadVoice .previewTop{justify-content:flex-start}
+  .ns .quadDialog>section{width:94vw;height:90dvh}
+}
