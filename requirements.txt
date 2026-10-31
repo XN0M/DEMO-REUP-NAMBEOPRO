@@ -10,6 +10,7 @@ opencv-python>=4.9.0
 playwright>=1.42.0
 openai>=1.14.0
 yt-dlp>=2024.3.10
+feedparser>=6.0.11
 
 numpy>=1.26.0
 

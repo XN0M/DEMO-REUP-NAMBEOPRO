@@ -16,8 +16,10 @@ import wave
 from contextlib import contextmanager
 import httpx
 import imageio_ffmpeg
+from .app_paths import DATA_ROOT, FROZEN, RESOURCE_ROOT
 
-BASE = Path(__file__).resolve().parent.parent
+BASE = DATA_ROOT
+ASSETS = RESOURCE_ROOT
 ENGINE = 'vieneu-3.8.3-v3turbo-1'
 GPU_LOCK = threading.RLock()
 
@@ -203,13 +205,19 @@ class VieneuRuntime:
         self.directory = self.root / '.runtime' / 'vieneu'
         self.process = None
         self.connection = None
-        self.device = 'cuda'
+        self.device = 'cpu' if FROZEN else 'cuda'
         settings = self.directory / 'settings.json'
         if settings.exists():
             try:
                 self.device = json.loads(settings.read_text())['device']
             except (OSError, ValueError, KeyError):
                 pass
+        elif FROZEN:
+            import sys
+            addons = Path(sys.executable).resolve().parent / 'plugins' / 'local-voices'
+            if not (addons / 'cpu' / 'LocalVoicesWorker.exe').exists() and \
+                    (addons / 'cuda' / 'LocalVoicesWorker.exe').exists():
+                self.device = 'cuda'
         if self.device not in ('cpu', 'cuda'):
             self.device = 'cuda'
         self.state = 'stopped'
@@ -224,7 +232,18 @@ class VieneuRuntime:
 
     @property
     def python(self):
+        if FROZEN:
+            import sys
+            return Path(sys.executable).resolve().parent / 'plugins' / 'local-voices' / self.device / 'LocalVoicesWorker.exe'
         return self.root / '.venv-vieneu' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+
+    def verified(self, engine='vieneu'):
+        name = 'verified.json' if engine == 'vieneu' else 'omni-verified.json'
+        try:
+            record = json.loads((self.directory / name).read_text(encoding='utf-8'))
+            return record.get('device') == self.device
+        except (OSError, ValueError, AttributeError):
+            return False
 
     def _idle(self):
         while True:
@@ -286,10 +305,15 @@ class VieneuRuntime:
             if code:
                 self.state, self.error = 'error', 'Cài VieNeu thất bại. Xem nhật ký rồi thử lại.'
         if not self.python.exists():
-            return dict(state='not_installed', device=self.device, message='Chưa cài VieNeu. Chọn Cài / sửa VieNeu.')
+            message = ('Chưa có gói Local Voices. Chạy Nambeo-LocalVoices-CPU-Setup.exe hoặc bản CUDA.'
+                       if FROZEN else 'Chưa cài VieNeu. Chọn Cài / sửa VieNeu.')
+            return dict(state='not_installed', device=self.device, message=message, packaged=FROZEN)
+        if FROZEN and not self.verified():
+            return dict(state='needs_setup', device=self.device,
+                        message='Đã cài worker. Chọn Cài / sửa giọng local để tải và thử model.', packaged=True)
         if self.process and self.process.poll() is not None:
             self.state, self.error = 'error', 'Worker VieNeu đã dừng. Kiểm tra nhật ký và thử lại.'
-        result = dict(state=self.state, device=self.device, message=self.error)
+        result = dict(state=self.state, device=self.device, message=self.error, packaged=FROZEN)
         if self.connection and self.process and self.process.poll() is None:
             try:
                 result.update(self.request('GET', '/health', timeout=2))
@@ -307,8 +331,13 @@ class VieneuRuntime:
             self.directory.mkdir(parents=True, exist_ok=True)
             import sys
             with open(self.directory / 'install.log', 'w', encoding='utf-8') as log:
-                self.install_process = subprocess.Popen([sys.executable, str(self.root / 'scripts' / 'setup_vieneu.py'), '--device', self.device],
-                    cwd=self.root, stdout=log, stderr=subprocess.STDOUT,
+                if FROZEN and not self.python.exists():
+                    raise TTSError('Chưa có gói Local Voices. Hãy chạy bộ cài thêm dành cho CPU hoặc CUDA.')
+                command = ([str(self.python), '--prepare', '--device', self.device] if FROZEN else
+                           [sys.executable, str(ASSETS / 'scripts' / 'setup_vieneu.py'), '--device', self.device])
+                env = dict(os.environ, HF_HOME=str(self.directory / 'models')) if FROZEN else None
+                self.install_process = subprocess.Popen(command,
+                    cwd=self.root, env=env, stdout=log, stderr=subprocess.STDOUT,
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             self.error = ''
             return self.status()
@@ -319,7 +348,8 @@ class VieneuRuntime:
         with GPU_LOCK:
             self.stop()
             self.device, self.state = device, 'stopped'
-            self.error = 'Nếu dùng thiết bị này lần đầu, chọn Cài / sửa VieNeu để tải model phù hợp.'
+            self.error = ('Chọn Cài / sửa giọng local để tải model.' if FROZEN else
+                          'Nếu dùng thiết bị này lần đầu, chọn Cài / sửa VieNeu để tải model phù hợp.')
             self.directory.mkdir(parents=True, exist_ok=True)
             (self.directory / 'settings.json').write_text(json.dumps({'device': device}))
 
@@ -330,7 +360,10 @@ class VieneuRuntime:
             if self.install_process and self.install_process.poll() is None:
                 raise TTSError('Đang cài VieNeu; hãy chờ hoàn tất')
             if not self.python.exists():
-                raise TTSError('Chưa cài VieNeu. Mở Giọng cá nhân → Cài / sửa VieNeu.')
+                raise TTSError('Chưa có worker giọng local. Cài gói Local Voices tương ứng.' if FROZEN else
+                               'Chưa cài VieNeu. Mở Giọng cá nhân → Cài / sửa VieNeu.')
+            if FROZEN and not self.verified():
+                raise TTSError('Chưa chuẩn bị model. Chọn Cài / sửa giọng local trước khi tạo giọng.')
             self.stop()
             self.state, self.error = 'starting', ''
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -338,11 +371,11 @@ class VieneuRuntime:
             token = secrets.token_urlsafe(32)
             env = dict(os.environ, NAMBEO_TTS_TOKEN=token, NAMBEO_TTS_PARENT=str(os.getpid()), HF_HOME=str(self.directory / 'models'),
                        PYTHONIOENCODING='utf-8')
-            if (self.directory / 'verified.json').exists():
+            if self.verified():
                 env['HF_HUB_OFFLINE'] = '1'
             self._log = open(self.directory / 'worker.log', 'a', encoding='utf-8')
-            self.process = subprocess.Popen([str(self.python), str(self.root / 'core' / 'vieneu_worker.py'),
-                '--ready', str(ready), '--device', self.device], cwd=self.root, env=env,
+            command = ([str(self.python)] if FROZEN else [str(self.python), str(ASSETS / 'core' / 'vieneu_worker.py')])
+            self.process = subprocess.Popen([*command, '--ready', str(ready), '--device', self.device], cwd=self.root, env=env,
                 stdout=self._log, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline and self.process.poll() is None:
@@ -365,7 +398,7 @@ class VieneuRuntime:
                     headers={'Authorization': 'Bearer ' + self.connection['token']}, json=payload)
             if response.status_code != 200:
                 raise TTSError(response.json().get('error', 'Lỗi tạo giọng VieNeu'))
-            return response.content if path == '/speech' else response.json()
+            return response.content if path in ('/speech', '/omnivoice') else response.json()
         except httpx.HTTPError as error:
             raise TTSError('Mất kết nối hoặc quá thời gian tạo giọng VieNeu. Kiểm tra nhật ký rồi thử lại.') from error
 

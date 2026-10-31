@@ -180,9 +180,40 @@ class DouyinDownloader:
         thumb_path = os.path.join(save_dir, f"{base_name}.thumb.jpg")
         loop = asyncio.get_running_loop()
         try:
-            if video_info.get("platform") == "youtube":
-                from core.extractor_yt import YouTubeExtractor
-                yt_extractor = YouTubeExtractor()
+            # Tự động trích xuất play_url nếu video_info chỉ có url gốc (từ Monitor)
+            play_url = video_info.get("play_url")
+            if not play_url:
+                if platform in ("youtube", "bilibili"):
+                    play_url = video_info.get("url") or video_info.get("id")
+                elif platform == "douyin":
+                    try:
+                        from core.extractor import DouyinExtractor
+                        dy_extractor = DouyinExtractor()
+                        ext_data = await loop.run_in_executor(None, dy_extractor.extract_video_info, video_info.get("url", ""))
+                        play_url = ext_data.get("play_url")
+                        video_info["play_url"] = play_url
+                    except Exception as e_dy:
+                        print(f"Auto extract Douyin stream failed: {e_dy}")
+                elif platform == "facebook":
+                    try:
+                        from core.extractor_fb import FacebookExtractor
+                        fb_extractor = FacebookExtractor()
+                        ext_data = await loop.run_in_executor(None, fb_extractor.extract_video_info, video_info.get("url", ""))
+                        play_url = ext_data.get("play_url")
+                        video_info["play_url"] = play_url
+                    except Exception as e_fb:
+                        print(f"Auto extract Facebook stream failed: {e_fb}")
+
+            if not play_url:
+                raise RuntimeError("Không tìm thấy đường dẫn phát video (play_url) để tải về.")
+
+            if video_info.get("platform") in ("youtube", "bilibili"):
+                if video_info.get("platform") == "bilibili":
+                    from core.extractor_bilibili import BilibiliExtractor
+                    yt_extractor = BilibiliExtractor()
+                else:
+                    from core.extractor_yt import YouTubeExtractor
+                    yt_extractor = YouTubeExtractor()
                 def _yt_prog(d):
                     for k, v in d.items():
                         task_data[k] = v
@@ -191,7 +222,7 @@ class DouyinDownloader:
                 await loop.run_in_executor(
                     None,
                     yt_extractor.download_video_sync,
-                    video_info["play_url"],
+                    play_url,
                     mp4_path,
                     _yt_prog
                 )
@@ -199,7 +230,7 @@ class DouyinDownloader:
                 await loop.run_in_executor(
                     None,
                     self._sync_download,
-                    video_info["play_url"],
+                    play_url,
                     mp4_path,
                     task_data,
                     on_progress
@@ -213,14 +244,30 @@ class DouyinDownloader:
                 )
 
             # Extract first frame (thumbnail)
+            if platform == 'youtube':
+                from core.studio_media import probe
+                info = await loop.run_in_executor(None, probe, mp4_path)
+                if not info.get('width') or not info.get('height') or info.get('duration', 0) <= 0:
+                    raise RuntimeError('File tải từ YouTube không chứa video hợp lệ. Lượt tải chưa hoàn tất.')
             await loop.run_in_executor(None, self.extract_first_frame, mp4_path, thumb_path)
             task_data["status"] = "completed"
             task_data["percent"] = 100.0
             task_data["speed"] = "Done"
             task_data["thumb_path"] = thumb_path
+
+            # Đánh dấu video đã tải về vào dữ liệu Monitor
+            try:
+                import core.monitor as monitor
+                monitor.mark_video_downloaded(video_id, mp4_path)
+            except Exception as e_mon:
+                pass
         except Exception as e:
-            task_data["status"] = "failed"
+            from core.youtube_session import YouTubeError
+            task_data["status"] = "paused" if isinstance(e, YouTubeError) and e.code in (
+                'youtube_auth_required', 'youtube_session_invalid', 'youtube_paused') else "failed"
             task_data["error"] = str(e)
+            if isinstance(e, YouTubeError):
+                task_data['error_code'] = e.code
             print(f"Error downloading {video_id}: {e}")
             # Dọn dẹp file rác nếu tải thất bại
             try:
@@ -228,6 +275,14 @@ class DouyinDownloader:
                     os.remove(mp4_path)
             except Exception:
                 pass
+            if platform == "bilibili":
+                try:
+                    if os.path.exists(json_path):
+                        os.remove(json_path)
+                    if not os.listdir(save_dir):
+                        os.rmdir(save_dir)
+                except OSError:
+                    pass
 
         if on_progress:
             on_progress(task_data)

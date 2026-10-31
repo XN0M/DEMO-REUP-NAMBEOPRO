@@ -34,6 +34,8 @@ class Job(BaseModel):
     at: float = Field(default=0, ge=0, allow_inf_nan=False)
     skip_errors: bool = False
     refresh: bool = False
+    cue_id: str | None = None
+    dubbed: bool | None = None
 
 class Transcribe(Job):
     model_size: str = Field(default='base', pattern='^(tiny|base|small)$')
@@ -109,7 +111,9 @@ def attach(host, database=None):
 
     def launch(kind, req):
         return call(service.launch, kind, req.filepath, req.revision, req.segment_ids,
-                    at=req.at, skip_errors=req.skip_errors, refresh=req.refresh if kind == 'tts' else False)
+                    at=req.at, cue_id=req.cue_id if kind == 'preview' else None,
+                    dubbed=req.dubbed if kind == 'preview' else None,
+                    skip_errors=req.skip_errors, refresh=req.refresh if kind == 'tts' else False)
 
     @router.post('/tts')
     def tts(req: Job):
@@ -135,6 +139,10 @@ def attach(host, database=None):
     @router.post('/shorten')
     def shorten(req: Job):
         return launch('shorten',req)
+
+    @router.post('/naturalize')
+    def naturalize(req: Job):
+        return launch('naturalize',req)
 
     @router.post('/preview')
     def preview(req: Job):

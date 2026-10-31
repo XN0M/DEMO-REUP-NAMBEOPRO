@@ -1,66 +1,168 @@
+"""Start the loopback UI without touching another process's port."""
+import ctypes
+import asyncio
+import json
 import os
-import sys
-import time
-import webbrowser
-import threading
 import subprocess
+import secrets
+import socket
+import sys
+import threading
+import time
+import urllib.request
+import webbrowser
+
 import uvicorn
 
-# Force UTF-8 on Windows console
-os.environ["PYTHONIOENCODING"] = "utf-8"
-if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+from core.app_paths import DATA_ROOT, FROZEN, RESOURCE_ROOT
+
+
+INSTANCE_FILE = DATA_ROOT / 'instance.json'
+
+
+def _notice(message):
+    if FROZEN and os.name == 'nt':
+        ctypes.windll.user32.MessageBoxW(None, str(message), 'Nambeo', 0x10)
+    else:
+        print(message, file=sys.stderr)
+
+
+def _claim_instance():
+    if os.name != 'nt':
+        return None, False
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+    kernel.CreateMutexW.restype = ctypes.c_void_p
+    handle = kernel.CreateMutexW(None, False, 'Local\\Nambeo-App')
+    if not handle:
+        raise OSError(ctypes.get_last_error(), 'Không tạo được khóa Nambeo')
+    return handle, ctypes.get_last_error() == 183
+
+
+def _running_url():
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
-if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        info = json.loads(INSTANCE_FILE.read_text(encoding='utf-8'))
+        port = int(info['port'])
+        token = str(info['token'])
+        if not (1 <= port <= 65535):
+            return None
+        url = f'http://127.0.0.1:{port}'
+        with urllib.request.urlopen(url + '/api/instance/ping?token=' + token, timeout=1) as response:
+            return url if response.status == 204 else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _open_when_ready(url):
+    for _ in range(100):
+        try:
+            with urllib.request.urlopen(url + '/', timeout=1) as response:
+                if response.status == 200:
+                    webbrowser.open(url)
+                    return
+        except OSError:
+            time.sleep(.1)
+
+
+def _self_test():
+    """Exercise bundled native tools and assets without downloading or processing media."""
+    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '0'
+    checks = {}
+    def check(name, action):
+        try:
+            action()
+            checks[name] = 'ok'
+        except Exception as error:
+            checks[name] = f'{type(error).__name__}: {error}'
+
+    def ffmpeg():
+        import imageio_ffmpeg
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-version'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=15)
+    def browser():
+        from playwright.async_api import async_playwright
+        async def run():
+            async with async_playwright() as playwright:
+                instance = await playwright.chromium.launch(headless=True)
+                await instance.close()
+        asyncio.run(run())
+    def whisper():
+        from faster_whisper import WhisperModel
+        path = RESOURCE_ROOT / 'models' / 'whisper-base'
+        if not (path / 'model.bin').is_file():
+            raise FileNotFoundError(path)
+        WhisperModel(str(path), device='cpu', compute_type='int8')
+    check('ffmpeg', ffmpeg)
+    check('chromium', browser)
+    check('whisper_base', whisper)
+    check('web', lambda: (RESOURCE_ROOT / 'web' / 'index.html').read_bytes())
+    result = {'ok': all(value == 'ok' for value in checks.values()), 'checks': checks}
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    (DATA_ROOT / 'self-test.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+    return 0 if result['ok'] else 1
+
+
+def main():
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    if '--self-test' in sys.argv:
+        return _self_test()
+    mutex, exists = _claim_instance()
+    if exists:
+        for _ in range(50):
+            url = _running_url()
+            if url:
+                if os.environ.get('NAMBEO_NO_BROWSER') != '1':
+                    webbrowser.open(url)
+                return
+            time.sleep(.1)
+        _notice('Nambeo đang khởi động. Hãy thử mở lại sau ít giây.')
+        return
+
+    output = None
+    sock = None
+    token = secrets.token_urlsafe(24)
     try:
-        sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+        if FROZEN:
+            output = (DATA_ROOT / 'nambeo.log').open('a', encoding='utf-8', buffering=1)
+            sys.stdout = sys.stderr = output
+        os.environ['NAMBEO_INSTANCE_TOKEN'] = token
+        if FROZEN:
+            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '0'
+        os.chdir(RESOURCE_ROOT)
+        from server import app
 
-# Ensure working directory is project dir and in sys.path
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-os.chdir(PROJECT_DIR)
-if PROJECT_DIR not in sys.path:
-    sys.path.insert(0, PROJECT_DIR)
-
-def free_port(port: int):
-    try:
-        out = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True).decode()
-        for line in out.strip().splitlines():
-            parts = line.split()
-            if len(parts) >= 5 and "LISTENING" in line:
-                pid = parts[-1]
-                if pid != str(os.getpid()):
-                    print(f"[*] Đang giải phóng cổng {port} từ tiến trình cũ (PID: {pid})...")
-                    subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True)
-                    time.sleep(0.5)
-    except Exception:
-        pass
-
-def open_browser():
-    time.sleep(1.5)
-    print("\n[+] Đang mở giao diện trên trình duyệt web...")
-    webbrowser.open("http://127.0.0.1:8000")
-
-if __name__ == "__main__":
-    free_port(8000)
-
-    print("=" * 60)
-    print("   DOUYIN & FACEBOOK VIDEO DOWNLOADER MVP - WEB UI")
-    print("=" * 60)
-    print(f"[*] Thư mục dự án: {PROJECT_DIR}")
-    print("[*] Khởi động máy chủ cục bộ tại: http://127.0.0.1:8000")
-    print("[*] Nhấn Ctrl+C trong cửa sổ này để tắt công cụ.")
-    print("=" * 60)
-
-    threading.Thread(target=open_browser, daemon=True).start()
-    
-    from server import app
-
-    # Run uvicorn cleanly in single process mode (prevents zombie workers on Windows)
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(('127.0.0.1', 8000))
+        except OSError:
+            sock.bind(('127.0.0.1', 0))
+        sock.listen(128)
+        port = sock.getsockname()[1]
+        INSTANCE_FILE.write_text(json.dumps({'port': port, 'token': token}), encoding='utf-8')
+        url = f'http://127.0.0.1:{port}'
+        if os.environ.get('NAMBEO_NO_BROWSER') != '1':
+            threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
+        service = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=port, log_level='info'))
+        service.run(sockets=[sock])
+        return 0 if service.started else 1
+    except Exception as error:
+        import traceback
+        traceback.print_exc()
+        _notice(f'Không khởi động được Nambeo: {error}\nXem nhật ký: {DATA_ROOT / "nambeo.log"}')
+        return 1
+    finally:
+        if sock:
+            sock.close()
+        try:
+            if INSTANCE_FILE.exists() and json.loads(INSTANCE_FILE.read_text(encoding='utf-8')).get('token') == token:
+                INSTANCE_FILE.unlink()
+        except (OSError, ValueError):
+            pass
+        if mutex:
+            ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(mutex))
+        if output:
+            output.close()
 
 
-
+if __name__ == '__main__':
+    sys.exit(main() or 0)

@@ -2,7 +2,7 @@
 (() => {
   let catalog = [], dialog, timer, player, playerUrl, loading;
   const model = {edge:'edge', openai:'tts-1', omnivoice:'omnivoice', vieneu:'v3turbo'};
-  const states = {not_installed:'Chưa cài', stopped:'Chưa nạp model', starting:'Đang khởi động', idle:'Chờ tạo giọng', installing:'Đang cài / tải model', loading:'Đang nạp / tải model', generating:'Đang tạo giọng', ready:'Sẵn sàng', error:'Có lỗi'};
+  const states = {not_installed:'Chưa cài', needs_setup:'Chưa tải model', stopped:'Chưa nạp model', starting:'Đang khởi động', idle:'Chờ tạo giọng', installing:'Đang cài / tải model', loading:'Đang nạp / tải model', generating:'Đang tạo giọng', ready:'Sẵn sàng', error:'Có lỗi'};
   const node = (tag, text) => {const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el;};
   async function api(path, options={}) {const response=await fetch('/api/tts'+path,options);const body=await response.json();if(!response.ok)throw Error(body.detail||'Không xử lý được yêu cầu');return body;}
   function report(error) {if(dialog)dialog.querySelector('[data-message]').textContent=error.message||String(error);}
@@ -76,7 +76,7 @@
       const engine=node('p');engine.dataset.engine='';const device=node('select');device.dataset.device='';device.setAttribute('aria-label','Thiết bị tạo giọng');
       for(const [value,label] of [['cuda','RTX / CUDA'],['cpu','CPU']]){const option=node('option',label);option.value=value;device.append(option);}
       device.onchange=async()=>{device.disabled=true;try{await api('/device',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({device:device.value})});}catch(error){report(error);}finally{device.disabled=false;}};
-      const actions=node('div');actions.className='voiceLibraryRow';actions.append(device,button('Cài / sửa VieNeu',async()=>{await api('/install',{method:'POST'});dialog.dataset.installing='true';}),button('Làm mới giọng',refresh));
+      const actions=node('div');actions.className='voiceLibraryRow';actions.append(device,button('Cài / sửa giọng local',async()=>{await api('/install',{method:'POST'});dialog.dataset.installing='true';}),button('Làm mới giọng',refresh));
       for(const [kind,label] of [['install','Nhật ký cài đặt'],['worker','Nhật ký tạo giọng']]){const link=node('a',label);link.href='/api/tts/log?kind='+kind;link.target='_blank';link.rel='noopener';actions.append(link);}
       const form=node('form'), name=node('input'), file=node('input'), consent=node('input'), consentLabel=node('label');
       name.placeholder='Tên giọng';name.required=true;name.maxLength=80;name.setAttribute('aria-label','Tên giọng mới');file.type='file';file.accept='.wav,.mp3,.m4a,.flac';file.required=true;file.setAttribute('aria-label','Audio mẫu dài 3–8 giây');consent.type='checkbox';consent.required=true;consentLabel.append(consent,document.createTextNode(' Tôi có quyền sử dụng giọng mẫu này'));

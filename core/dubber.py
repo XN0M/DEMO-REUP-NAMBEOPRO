@@ -253,6 +253,23 @@ class DouyinDubber:
         return self.omnivoice_model
 
     async def synthesize_omnivoice(self, text: str, ref_audio: str = None) -> bytes:
+        from .app_paths import FROZEN
+        if FROZEN:
+            if not ref_audio or not os.path.isfile(ref_audio):
+                raise RuntimeError('OmniVoice yêu cầu file âm thanh tham chiếu.')
+            if not vieneu_runtime.verified('omni'):
+                raise TTSError('OmniVoice chưa được chuẩn bị. Mở Giọng cá nhân → Cài / sửa giọng local.')
+            def packaged_voice():
+                import base64
+                if os.path.getsize(ref_audio) > 20 * 1024 * 1024:
+                    raise RuntimeError('Mẫu giọng OmniVoice không quá 20 MB.')
+                with open(ref_audio, 'rb') as stream:
+                    reference = base64.b64encode(stream.read()).decode('ascii')
+                with GPU_LOCK:
+                    vieneu_runtime.start()
+                    return vieneu_runtime.request('POST', '/omnivoice', dict(
+                        text=text, reference_wav=reference))
+            return await asyncio.to_thread(packaged_voice)
         import soundfile as sf
         import io
         import asyncio

@@ -99,3 +99,6 @@ ehthumbs_vista.db
 # Persistent local Studio job state
 .runtime/
 .dub_*/
+build-assets/
+release/
+.build-venv/

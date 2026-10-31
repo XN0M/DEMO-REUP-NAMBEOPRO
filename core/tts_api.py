@@ -27,7 +27,10 @@ def attach(host):
 
     @router.post('/install')
     async def install():
-        return await asyncio.to_thread(runtime.install)
+        try:
+            return await asyncio.to_thread(runtime.install)
+        except TTSError as error:
+            raise HTTPException(400, str(error)) from error
 
     @router.put('/device')
     async def device(req: Device):

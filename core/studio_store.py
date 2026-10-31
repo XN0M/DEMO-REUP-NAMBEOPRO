@@ -25,7 +25,8 @@ STYLE = dict(font='DejaVu Sans', size=42, bold=True, color='#FFFFFF', outline_co
 DEFAULT = dict(style=STYLE, voice=VOICE, speakers={}, clone_consent=False,
                mix={'voice_volume': 1.0, 'bg_volume': 0.15, 'ducking': True},
                render={'start': 0, 'end': None, 'speed': 1, 'aspect': 'original', 'dubbed': False, 'subtitles': True},
-               reading_speed=20, timing={'max_speed': 1.65, 'max_overlap': .5}, caption_hold=12, branding=branding.DEFAULT)
+               reading_speed=20, timing={'policy': 'natural-v1', 'max_speed': 1.15, 'max_overlap': 0},
+               pronunciations=[], caption_hold=12, branding=branding.DEFAULT)
 
 class Conflict(ValueError):
     pass
@@ -72,6 +73,29 @@ def dub_text(seg, language):
         return override.strip()
     return (seg.get('vietnamese') or (source_text(seg) if language == 'vi' else '')).strip()
 
+
+def spoken_text(data, seg):
+    """Apply per-video pronunciation hints only to what TTS receives."""
+    text = dub_text(seg, data.get('detected_language'))
+    rules = sorted((item for item in data['studio_config'].get('pronunciations', [])
+                    if item['term'] and item['reading']),
+                   key=lambda item: len(item['term']), reverse=True)
+    parts = []
+    index = 0
+    def word(char):
+        return bool(char) and (char.isalnum() or char == '_')
+    while index < len(text):
+        found = next((item for item in rules if text.startswith(item['term'], index)
+                      and not word(text[index-1] if index else '')
+                      and not word(text[index+len(item['term'])] if index+len(item['term']) < len(text) else '')), None)
+        if found:
+            parts.append(found['reading'])
+            index += len(found['term'])
+        else:
+            parts.append(text[index])
+            index += 1
+    return ''.join(parts)
+
 def normalize(data):
     if not isinstance(data, dict) or not isinstance(data.get('segments', []), list):
         raise ValueError('Bản thoại phải chứa danh sách câu')
@@ -88,6 +112,10 @@ def normalize(data):
     config = copy.deepcopy(DEFAULT)
     if not isinstance(data.get('studio_config', {}), dict):
         raise ValueError('Cấu hình Studio không hợp lệ')
+    # A persisted transcript without the new policy keeps its former timing.
+    previous = data.get('studio_config', {})
+    if previous and 'policy' not in previous.get('timing', {}):
+        config['timing'] = {'policy': 'legacy', 'max_speed': 1.65, 'max_overlap': .5}
     for key, value in data.get('studio_config', {}).items():
         if key in config:
             if isinstance(config[key], dict):
@@ -102,7 +130,15 @@ def normalize(data):
 
 def load(video):
     transcript, _, _ = paths(video)
-    return normalize(read_json(transcript, {'segments': [], 'detected_language': 'auto'}))
+    raw = read_json(transcript, {'segments': [], 'detected_language': 'auto'})
+    if (transcript.exists() and isinstance(raw, dict)
+            and isinstance(raw.get('studio_config', {}), dict)
+            and isinstance(raw.get('studio_config', {}).get('timing', {}), dict)
+            and 'policy' not in raw.get('studio_config', {}).get('timing', {})):
+        raw.setdefault('studio_config', {}).setdefault('timing', {}).update(
+            policy='legacy', max_speed=raw.get('studio_config', {}).get('timing', {}).get('max_speed', 1.65),
+            max_overlap=raw.get('studio_config', {}).get('timing', {}).get('max_overlap', .5))
+    return normalize(raw)
 
 def number(value, low, high, label):
     value = float(value)
@@ -175,9 +211,26 @@ def validate(data, duration):
         cfg['mix'][key] = number(cfg['mix'][key], 0, 3, key)
     cfg['branding'] = branding.validate(cfg['branding'], duration)
     cfg['reading_speed'] = number(cfg['reading_speed'], 1, 100, 'Tốc độ đọc')
+    if cfg['timing']['policy'] not in ('legacy', 'natural-v1'):
+        raise ValueError('Chính sách căn giọng không hợp lệ')
     cfg['timing']['max_speed'] = number(cfg['timing']['max_speed'], 1,
-        1.25 if cfg['timing'].get('policy') == 'natural-v1' else 1.65, 'Tốc độ giọng tối đa')
+        1.65 if cfg['timing']['policy'] == 'legacy' else 1.25, 'Tốc độ giọng tối đa')
     cfg['timing']['max_overlap'] = number(cfg['timing']['max_overlap'], 0, 1, 'Chồng tiếng tối đa')
+    if cfg['timing']['policy'] == 'natural-v1' and cfg['timing']['max_overlap'] != 0:
+        raise ValueError('Chế độ căn tự nhiên không chồng giọng')
+    rules = cfg['pronunciations']
+    if not isinstance(rules, list) or len(rules) > 100:
+        raise ValueError('Bảng cách đọc không hợp lệ')
+    terms = set()
+    for rule in rules:
+        if not isinstance(rule, dict) or set(rule) != {'term', 'reading'} or any(
+            not isinstance(rule[k], str) or not rule[k].strip() or len(rule[k]) > limit
+            for k, limit in (('term', 80), ('reading', 160))):
+            raise ValueError('Mục cách đọc không hợp lệ')
+        term = rule['term'].casefold()
+        if term in terms:
+            raise ValueError('Tên trong bảng cách đọc bị trùng')
+        terms.add(term)
     cfg['caption_hold'] = number(cfg['caption_hold'], 10, 15, 'Thời gian hiện phụ đề')
     render = cfg['render']
     render['start'] = number(render['start'], 0, duration, 'Trim bắt đầu')
@@ -270,7 +323,7 @@ def voice_for(data, seg):
 
 def audio_key(data, seg, source_fingerprint=''):
     voice = voice_for(data, seg)
-    payload = {'text': dub_text(seg, data.get('detected_language')), 'voice': voice}
+    payload = {'text': spoken_text(data, seg), 'voice': voice}
     if voice['provider'] == 'vieneu':
         from .tts_runtime import library
         payload['engine_reference'] = library.fingerprint(voice['voice'])
@@ -280,9 +333,13 @@ def audio_key(data, seg, source_fingerprint=''):
 
 def timing_key(data):
     cfg = data['studio_config']
-    payload = {'version': 5, 'speed': cfg['render']['speed'], 'timing': cfg['timing'],
+    natural = cfg['timing']['policy'] == 'natural-v1'
+    timing = cfg['timing'] if natural else {k:cfg['timing'][k] for k in ('max_speed','max_overlap')}
+    payload = {'version': 6 if natural else 5, 'speed': cfg['render']['speed'], 'timing': timing,
                'segments': [(s['id'], s['start'], s['end'], bool(dub_text(s, data.get('detected_language'))))
                             for s in sorted(data['segments'], key=lambda s: (s['start'], s['end'], s['id']))]}
+    if natural:
+        payload['trim'] = (cfg['render']['start'], cfg['render']['end'])
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 def warnings(data, media_info=None):

@@ -1,12 +1,17 @@
 import os
 import re
 import asyncio
+import time
+from urllib.parse import urlsplit, parse_qs
+from .youtube_session import (session_store, youtube_queue, youtube_host, cookiejar,
+                              classify, QuietLogger, YouTubeError)
 from typing import Dict, Optional, Callable
 import yt_dlp
 import imageio_ffmpeg
 
 class YouTubeExtractor:
     """Extractor and downloader for YouTube videos using yt-dlp."""
+    use_youtube_session = True
 
     def __init__(self):
         self.ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
@@ -16,8 +21,7 @@ class YouTubeExtractor:
         """Check if URL belongs to YouTube."""
         if not url:
             return False
-        u = url.lower().strip()
-        return "youtube.com" in u or "youtu.be" in u
+        return youtube_host(url)
 
     @staticmethod
     def clean_youtube_url(url: str) -> str:
@@ -25,19 +29,16 @@ class YouTubeExtractor:
         if not url:
             return ""
         u = url.strip()
-        # Check standard watch?v=...
-        m = re.search(r"[?&]v=([a-zA-Z0-9_-]{11})", u)
-        if m:
-            return f"https://www.youtube.com/watch?v={m.group(1)}"
-        # Check youtu.be/...
-        m_short = re.search(r"youtu\.be/([a-zA-Z0-9_-]{11})", u)
-        if m_short:
-            return f"https://www.youtube.com/watch?v={m_short.group(1)}"
-        # Check shorts/...
-        m_shorts = re.search(r"/shorts/([a-zA-Z0-9_-]{11})", u)
-        if m_shorts:
-            return f"https://www.youtube.com/watch?v={m_shorts.group(1)}"
-        return u
+        if not youtube_host(u):
+            raise YouTubeError('youtube_url', 'Hãy nhập đường dẫn video youtube.com hoặc youtu.be hợp lệ.')
+        parsed = urlsplit(u)
+        parts = parsed.path.strip('/').split('/')
+        identity = (parts[0] if parsed.hostname.lower() == 'youtu.be' else
+                    parse_qs(parsed.query).get('v', [''])[0] if parsed.path == '/watch' else
+                    parts[1] if len(parts) == 2 and parts[0] in ('shorts','live','embed') else '')
+        if not re.fullmatch(r'[a-zA-Z0-9_-]{11}', identity):
+            raise YouTubeError('youtube_url', 'Nhập link một video YouTube, Shorts hoặc livestream cụ thể; chưa hỗ trợ link kênh/danh sách.')
+        return f'https://www.youtube.com/watch?v={identity}'
 
     def _build_base_opts(self) -> dict:
         """Shared yt-dlp options: Node.js runtime (chống bóp băng thông n-sig YouTube),
@@ -52,48 +53,89 @@ class YouTubeExtractor:
             'js_runtimes': {'node': {}},
         }
 
-    def parse_single_url_sync(self, raw_url: str) -> Optional[Dict]:
+    def _execute(self, url, options, action, progress=None, check=False, on_snapshot=None):
+        if not self.use_youtube_session:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                return action(ydl)
+        if not youtube_host(url):
+            raise YouTubeError('youtube_url', 'Đường dẫn video YouTube không hợp lệ.')
+        # A fresh request must be able to try public access even after a previous
+        # authenticated request paused the queue. Keep FIFO spacing intact.
+        with youtube_queue.lease(progress, check=True) as generation:
+            snapshot = session_store.snapshot() if check else {'cookies': []}
+            if on_snapshot:
+                on_snapshot(snapshot['version'])
+            if progress:
+                progress({'status': 'downloading', 'speed': 'Đang kết nối YouTube'})
+            options = {**options, 'noprogress': True,
+                'socket_timeout': 20, 'retries': 0, 'extractor_retries': 0,
+                'fragment_retries': 0, 'file_access_retries': 0}
+            used_fallback = check
+            network_attempts = 0
+            while True:
+                logger = QuietLogger()
+                try:
+                    with yt_dlp.YoutubeDL({**options, 'logger': logger}) as ydl:
+                        ydl.cookiejar = cookiejar(snapshot['cookies'])
+                        result = action(ydl)
+                    if snapshot['cookies'] and logger.invalid_session:
+                        raise YouTubeError('youtube_session_invalid', 'YouTube báo phiên đã hết hiệu lực. Hãy xuất và nhập lại cookie.')
+                    if check and not result:
+                        raise YouTubeError('youtube_extract_failed', 'Không đọc được metadata video YouTube.')
+                    if generation == youtube_queue.generation:
+                        youtube_queue.resume()
+                    return result
+                except Exception as error:
+                    safe = classify(error)
+                    if not used_fallback and safe.code in ('youtube_auth_required', 'youtube_restricted'):
+                        used_fallback = True
+                        snapshot = session_store.snapshot()
+                        if snapshot['cookies']:
+                            continue
+                    if safe.code != 'youtube_network' or network_attempts == 2:
+                        raise safe from None
+                    network_attempts += 1
+                    time.sleep(max(youtube_queue.interval, 2 ** network_attempts))
+
+    def parse_single_url_sync(self, raw_url: str, check=False, on_snapshot=None) -> Optional[Dict]:
         """Extract YouTube video metadata synchronously."""
         clean_url = self.clean_youtube_url(raw_url)
         ydl_opts = {
             **self._build_base_opts(),
             'skip_download': True,
         }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(clean_url, download=False)
-                if not info:
-                    return None
+        info = self._execute(clean_url, ydl_opts,
+            lambda ydl: ydl.extract_info(clean_url, download=False),
+            check=check, on_snapshot=on_snapshot)
+        if not info:
+            return None
 
-                vid_id = info.get("id") or f"yt_{abs(hash(clean_url))}"
-                title = info.get("title") or "YouTube Video"
-                author = info.get("uploader") or info.get("channel") or "YouTube Creator"
-                duration = info.get("duration") or 0
+        vid_id = info.get("id") or f"yt_{abs(hash(clean_url))}"
+        title = info.get("title") or "YouTube Video"
+        author = info.get("uploader") or info.get("channel") or "YouTube Creator"
+        duration = info.get("duration") or 0
 
-                # Thumbnail - ưu tiên maxresdefault để chất lượng cao nhất
-                cover_url = info.get("thumbnail") or f"https://i.ytimg.com/vi/{vid_id}/maxresdefault.jpg"
+        # Thumbnail - ưu tiên maxresdefault để chất lượng cao nhất
+        cover_url = info.get("thumbnail") or f"https://i.ytimg.com/vi/{vid_id}/maxresdefault.jpg"
 
-                # Resolution - lấy từ luồng đã chọn thực tế
-                width = info.get("width")
-                height = info.get("height")
-                resolution = f"{width}x{height}" if width and height else (f"{height}p" if height else "HD")
+        # Resolution - lấy từ luồng đã chọn thực tế
+        width = info.get("width")
+        height = info.get("height")
+        resolution = f"{width}x{height}" if width and height else (f"{height}p" if height else "HD")
 
-                return {
-                    "id": str(vid_id),
-                    "platform": "youtube",
-                    "title": title,
-                    "author": author,
-                    "author_avatar": "",
-                    "cover_url": cover_url,
-                    "play_url": clean_url,  # Truyền nguyên URL cho downloader yt-dlp
-                    "duration": duration,
-                    "resolution": resolution,
-                    "created_time": "",
-                    "raw_url": raw_url.strip()
-                }
-            except Exception as e:
-                print(f"[YouTubeExtractor] Parse error: {e}")
-                return None
+        return {
+            "id": str(vid_id),
+            "platform": "youtube",
+            "title": title,
+            "author": author,
+            "author_avatar": "",
+            "cover_url": cover_url,
+            "play_url": clean_url,  # Truyền nguyên URL cho downloader yt-dlp
+            "duration": duration,
+            "resolution": resolution,
+            "created_time": "",
+            "raw_url": raw_url.strip()
+        }
 
     async def parse_single_url(self, raw_url: str) -> Optional[Dict]:
         """Extract YouTube video metadata asynchronously in a thread."""
@@ -172,8 +214,9 @@ class YouTubeExtractor:
             'overwrites': True,
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([clean_url])
+        code = self._execute(clean_url, ydl_opts, lambda ydl: ydl.download([clean_url]), on_progress)
+        if code:
+            raise YouTubeError('youtube_download_failed', 'Bộ tải chưa hoàn tất video. Hãy kiểm tra phiên và thử lại.')
 
         # Đảm bảo file đầu ra đúng tên đích
         expected_path = f"{outtmpl_no_ext}.mp4"

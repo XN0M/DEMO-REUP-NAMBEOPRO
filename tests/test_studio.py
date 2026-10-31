@@ -131,6 +131,67 @@ class Studio(unittest.TestCase):
         data=self.project()['project'];data['segments'][0]['start']=float('nan')
         with self.assertRaises(ValueError):store.validate(data,6)
 
+    def test_natural_timing_blocks_long_voice_without_losing_raw_cache(self):
+        project=self.project()['project']
+        project['studio_config']['timing']={'policy':'natural-v1','max_speed':1.15,'max_overlap':0}
+        project['studio_config']['render']['dubbed']=True
+        project=self.save(project)
+        first,second=[seg['id'] for seg in project['segments']]
+        async def synth(text, voice):
+            return sound(4 if text=='Xin chào' else .4)
+        with patch.object(server.dubber,'synthesize_edge',side_effect=synth) as mock:
+            result=self.job('tts',project,segment_ids=[first,second])
+            self.assertEqual(result['status'],'completed',result)
+            self.assertEqual(mock.await_count,2)
+            status=self.project()['audio']
+            self.assertEqual(status[first]['status'],'needs_timing')
+            self.assertIn('Lời đọc dài',status[first]['reason'])
+            self.assertEqual(status[second]['status'],'ready')
+            self.assertTrue((store.paths(self.video)[2]/'audio'/(status[first]['key']+'.wav')).exists())
+            blocked=self.job('export',project)
+            self.assertEqual(blocked['status'],'error')
+            self.assertIn('cần chỉnh thời lượng',blocked['message'])
+            project['studio_config']['render']['end']=5
+            project=self.save(project)
+            self.job('tts',project,segment_ids=[first,second])
+            self.assertEqual(mock.await_count,2)
+            self.assertEqual(self.project()['audio'][first]['status'],'needs_timing')
+
+    def test_natural_timing_exports_short_voice_without_extra_tail(self):
+        project=self.project()['project']
+        project['studio_config']['timing']={'policy':'natural-v1','max_speed':1.15,'max_overlap':0}
+        project['studio_config']['render']['dubbed']=True
+        project=self.save(project)
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(.4))):
+            self.assertEqual(self.job('tts',project)['status'],'completed')
+        audio=self.project()['audio']
+        self.assertTrue(all(entry['status']=='ready' for entry in audio.values()))
+        self.assertTrue(all(entry['tempo']==1 for entry in audio.values()))
+        exported=self.job('export',project)
+        self.assertEqual(exported['status'],'completed',exported)
+        self.assertEqual(exported['render']['extended_seconds'],0)
+        self.assertTrue(media.has_audio(store.paths(self.video)[2]/exported['artifact']))
+        project['studio_config']['render']['dubbed']=False
+        project=self.save(project)
+        preview=self.job('preview',project,cue_id=project['segments'][0]['id'],dubbed=True)
+        self.assertEqual(preview['status'],'completed',preview)
+        self.assertTrue(preview['snapshot']['studio_config']['render']['dubbed'])
+        self.assertFalse(self.project()['project']['studio_config']['render']['dubbed'])
+
+    def test_natural_timing_compensates_video_speed_without_new_tts(self):
+        project=self.project()['project']
+        project['studio_config']['timing']={'policy':'natural-v1','max_speed':1.15,'max_overlap':0}
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(.4))) as mock:
+            for speed in (.5,1,2):
+                project['studio_config']['render']['speed']=speed
+                project=self.save(project)
+                self.assertEqual(self.job('tts',project)['status'],'completed')
+                for entry in self.project()['audio'].values():
+                    self.assertEqual(entry['status'],'ready')
+                    self.assertAlmostEqual(entry['tempo'],1)
+                    self.assertAlmostEqual(entry['aligned_duration']/speed,entry['raw_duration'],delta=.04)
+            self.assertEqual(mock.await_count,2)
+
     def test_incremental_audio_and_style_does_not_invalidate(self):
         data=self.save(self.project()['project'])
         mock=AsyncMock(return_value=sound())
@@ -275,6 +336,40 @@ class Studio(unittest.TestCase):
         self.assertGreater(after[second]['play_start'],before[second]['play_start'])
         self.assertGreater(after[first]['play_end'],before[first]['play_end'])
 
+    def test_switch_voice_preserves_overrides_and_reuses_previous_voice_cache(self):
+        data=self.project()['project']
+        original_voice=copy.deepcopy(data['studio_config']['voice'])
+        data['studio_config']['speakers']={'B':copy.deepcopy(original_voice)}
+        data=self.save(data)
+        first,second=[s['id'] for s in data['segments']]
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(.4))):
+            self.assertEqual(self.job('tts',data)['status'],'completed')
+        assets=store.paths(self.video)[2]
+        before=self.svc.manifest(self.video)
+        old_raw=assets/'audio'/(before[first]['key']+'.wav')
+        old_bytes=old_raw.read_bytes()
+        original_segments=copy.deepcopy(data['segments'])
+        data['studio_config']['voice']['voice']='vi-VN-NamMinhNeural'
+        data=self.save(data)
+        statuses=self.project()['audio']
+        self.assertEqual(statuses[first]['status'],'stale')
+        self.assertEqual(statuses[second]['status'],'ready')
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(return_value=sound(.5))) as synth:
+            self.assertEqual(self.job('tts',data,segment_ids=[first])['status'],'completed')
+            synth.assert_awaited_once_with('Xin chào','vi-VN-NamMinhNeural')
+        self.assertEqual(old_raw.read_bytes(),old_bytes)
+        self.assertEqual(self.svc.manifest(self.video)[second]['key'],before[second]['key'])
+        self.assertEqual(data['segments'],original_segments)
+        data['studio_config']['voice']=original_voice
+        data=self.save(data)
+        with patch.object(server.dubber,'synthesize_edge',AsyncMock(side_effect=AssertionError('Must reuse cache'))) as synth:
+            self.assertEqual(self.job('tts',data,segment_ids=[first])['status'],'completed')
+            synth.assert_not_awaited()
+        data['studio_config']['voice']['voice']='vi-VN-NamMinhNeural'
+        data['studio_config']['speakers']={}
+        data=self.save(data)
+        self.assertEqual([self.project()['audio'][sid]['status'] for sid in (first,second)],['stale','stale'])
+
     def test_identical_words_have_distinct_aligned_audio_for_each_cue(self):
         data=self.project()['project']
         data['segments'][1]['vietnamese']=data['segments'][0]['vietnamese']
@@ -319,6 +414,15 @@ class Studio(unittest.TestCase):
         self.assertEqual(result['proposals'][0]['text'],'Bản dịch đề xuất')
         self.assertEqual(self.project()['project']['segments'][0]['vietnamese'],'Xin chào')
         self.assertIn('character_map',mock.call_args.args[0])
+
+    def test_natural_voice_proposal_keeps_subtitles_until_approved(self):
+        data=self.save(self.project()['project']);sid=data['segments'][0]['id']
+        answer=json.dumps([{'id':sid,'text':'Chào bạn nhé'}])
+        with patch.object(server,'load_app_config',return_value={'gemini_api_key':'mock'}),patch.object(server.translator,'_call_ai',AsyncMock(return_value=answer)) as mock:
+            result=self.job('naturalize',data,segment_ids=[sid])
+        self.assertEqual(result['proposals'][0]['text'],'Chào bạn nhé')
+        self.assertEqual(self.project()['project']['segments'][0]['vietnamese'],'Xin chào')
+        self.assertIn('available_seconds',mock.call_args.args[0])
 
     def test_move_delete_studio_assets_and_history_ignores_cache(self):
         data=self.save(self.project()['project'])

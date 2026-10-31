@@ -1,6 +1,36 @@
 """Schedule spoken cues using measured audio lengths in source-video time."""
 
 
+def natural_schedule(cues, video_speed=1.0, max_tempo=1.15, video_end=0.0,
+                     trim_start=0.0, trim_end=None):
+    """Keep speech on cue starts; report an unfit cue instead of hiding it."""
+    ordered = sorted(cues, key=lambda cue: (float(cue['start']), float(cue['end']), str(cue['id'])))
+    result = {}
+    limit = video_end if trim_end is None else min(video_end, trim_end)
+    for index, cue in enumerate(ordered):
+        start = float(cue['start'])
+        following = float(ordered[index + 1]['start']) if index + 1 < len(ordered) else limit
+        boundary = min(limit, following)
+        overlap = index + 1 < len(ordered) and float(cue['end']) > following + 1e-6
+        # Source timestamps are used throughout the editor; audio duration is
+        # measured in output seconds. Leave a small audible gap between cues.
+        available = max(0.0, (boundary - start) / video_speed - .08)
+        duration = float(cue['duration'])
+        required = duration / available if available > 0 else None
+        tempo = min(max_tempo, max(1.0, required or 1.0))
+        end = start + duration * video_speed / tempo
+        reason = ('Các câu nguồn chồng thời gian' if overlap else
+                  'Không còn thời lượng trong đoạn xuất' if available <= 0 else
+                  'Lời đọc dài hơn thời lượng cho phép' if required is not None and required > max_tempo + 1e-6 else '')
+        result[cue['id']] = dict(play_start=start, play_end=end,
+                                 speed=tempo, tempo=tempo,
+                                 raw_duration=duration, available_duration=available,
+                                 required_tempo=required, delay=0.0, overlap=0.0,
+                                 status='needs_timing' if reason else 'ready',
+                                 reason=reason)
+    return result
+
+
 def schedule(cues, video_speed=1.0, max_speed=1.65, max_overlap=1.0, video_end=0.0):
     """Return cue timing without losing speech; overlap limits are output seconds."""
     ordered = sorted(cues, key=lambda cue: (float(cue['start']), float(cue['end']), str(cue['id'])))

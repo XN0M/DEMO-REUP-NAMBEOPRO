@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from playwright.async_api import async_playwright
 from core.extractor_fb import FacebookExtractor
 from core.extractor_yt import YouTubeExtractor
+from core.extractor_bilibili import BilibiliExtractor
 
 class DouyinExtractor:
     def __init__(self):
@@ -16,6 +17,7 @@ class DouyinExtractor:
         )
         self.fb_extractor = FacebookExtractor()
         self.yt_extractor = YouTubeExtractor()
+        self.bilibili_extractor = BilibiliExtractor()
 
     def extract_video_id(self, url: str) -> Optional[str]:
         """Extract video/modal ID from various Douyin URL patterns."""
@@ -56,6 +58,9 @@ class DouyinExtractor:
         # Delegate Facebook URLs to FacebookExtractor
         if FacebookExtractor.is_facebook_url(clean_url):
             return await self.fb_extractor.parse_single_url(clean_url)
+
+        if BilibiliExtractor.is_bilibili_url(clean_url):
+            return await self.bilibili_extractor.parse_single_url(clean_url)
 
         # Delegate YouTube URLs to YouTubeExtractor
         if YouTubeExtractor.is_youtube_url(clean_url):

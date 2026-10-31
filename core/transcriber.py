@@ -4,6 +4,7 @@ import os
 import time
 from typing import Callable, Dict, List, Optional
 from faster_whisper import WhisperModel
+from .app_paths import DATA_ROOT, FROZEN, RESOURCE_ROOT
 
 class DouyinTranscriber:
     def __init__(self):
@@ -14,10 +15,13 @@ class DouyinTranscriber:
         """Load and cache Whisper model with int8 quantization for ultra-fast CPU inference."""
         if model_size not in self.models:
             print(f"[*] Đang tải mô hình Whisper '{model_size}' (CPU int8)...")
+            bundled = RESOURCE_ROOT / 'models' / 'whisper-base'
+            model_ref = str(bundled) if FROZEN and model_size == 'base' and (bundled / 'model.bin').is_file() else model_size
             self.models[model_size] = WhisperModel(
-                model_size,
+                model_ref,
                 device="cpu",
-                compute_type="int8"
+                compute_type="int8",
+                download_root=str(DATA_ROOT / '.runtime' / 'models' / 'whisper') if FROZEN else None
             )
             print(f"[+] Mô hình Whisper '{model_size}' đã sẵn sàng.")
         return self.models[model_size]
